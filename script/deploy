@@ -1,0 +1,41 @@
+#!/bin/bash
+
+set -ex
+
+cd "$(dirname $0)/.."
+
+WALLET_KEY=$1
+
+if [[ ${WALLET_KEY} == "" ]]; then
+  echo "You must supply a private key as the first argument!"
+  exit 1
+fi
+
+URL=http://localhost:8545
+
+# forge install openzeppelin/openzeppelin-contracts --no-commit
+forge create --rpc-url $URL \
+   --constructor-args "DanCoin" "DAN" 10000 \
+   --private-key ${WALLET_KEY} src/DanToken.sol:DanToken \
+
+exit 0
+echo -n "Enter Token Contract Address: "
+read TOKEN
+
+# TOKEN='0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9'
+
+SUMMONER='0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266'
+PERIOD_DURATION_IN_SECONDS=17280
+VOTING_DURATON_IN_PERIODS=35
+GRACE_DURATON_IN_PERIODS=35
+ABORT_WINDOW=5 # < periods
+PROPOSAL_DEPOSIT=10000
+DILUTION_BOUND=3
+PROCESSING_REWARD=100
+
+forge create --rpc-url $URL \
+    --constructor-args ${SUMMONER} ${TOKEN} ${PERIOD_DURATION_IN_SECONDS} ${VOTING_DURATON_IN_PERIODS} ${GRACE_DURATON_IN_PERIODS} ${ABORT_WINDOW} ${PROPOSAL_DEPOSIT} ${DILUTION_BOUND} ${PROCESSING_REWARD} \
+    --from $SUMMONER \
+    --json \
+    --private-key ${WALLET_KEY} src/Moloch.sol:Moloch \
+
