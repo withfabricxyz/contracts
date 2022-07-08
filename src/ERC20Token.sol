@@ -3,12 +3,16 @@ pragma solidity ^0.8.0;
 
 import "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
-contract DanToken is ERC20 {
+contract ERC20Token is ERC20 {
     constructor(
         string memory name,
         string memory symbol,
         uint256 initialSupply
     ) ERC20(name, symbol) {
         _mint(msg.sender, initialSupply);
+    }
+
+    function decimals() public pure override returns (uint8) {
+        return 0;
     }
 }
