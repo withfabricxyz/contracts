@@ -1,0 +1,31 @@
+#!/bin/bash
+
+
+install_foundry() {
+  if ! command -v foundryup &> /dev/null; then
+    echo "Installing foundry..."
+    curl -L https://foundry.paradigm.xyz | bash
+  fi
+
+  if ! command -v forge &> /dev/null; then
+    foundryup || ~/.foundary/bin/foundryup
+  fi
+}
+
+install_brew() {
+  echo "Checking brew packages for updates"
+  if ! command -v brew &> /dev/null
+  then
+    curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh
+  fi
+  brew bundle check || brew bundle
+}
+
+install_brew
+install_foundry
+
+echo
+echo "Installed"
+forge --version
+cast --version
+anvil --version
