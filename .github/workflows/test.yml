@@ -28,4 +28,4 @@ jobs:
       - name: Run Slither Analysis
         uses: crytic/slither-action@v0.2.0
         with:
-          target: './'
+          fail-on: high
