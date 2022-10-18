@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.17;
 
-import "openzeppelin-contracts/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 /**
  * A minimal contract for accumulating funds from many accounts, transferring the balance
