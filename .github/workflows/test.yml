@@ -1,4 +1,4 @@
-name: test
+name: Smart Contract Tests
 
 on: push
 
@@ -9,9 +9,9 @@ jobs:
   check:
     strategy:
       fail-fast: true
-
-    name: Foundry project
+    name: Foundry + Slither Testing
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v3
         with:
@@ -22,13 +22,10 @@ jobs:
         with:
           version: nightly
 
-      - name: Run Forge build
-        run: |
-          forge --version
-          forge build --sizes
-        id: build
-
       - name: Run Forge tests
-        run: |
-          forge test -vvv
-        id: test
+        run: forge test -vvv
+
+      - name: Run Slither Analysis
+        uses: crytic/slither-action@v0.2.0
+        with:
+          target: 'src/'

@@ -20,7 +20,6 @@ import "openzeppelin-contracts/contracts/security/ReentrancyGuard.sol";
  * withdraw their initial investment.
  */
 contract CrowdFinancingV1 is ReentrancyGuard {
-
     // Emitted when an address deposits funds to the contract
     event Deposit(address indexed account, uint256 weiAmount);
 
@@ -37,9 +36,9 @@ contract CrowdFinancingV1 is ReentrancyGuard {
     event Payout(address indexed account, uint256 weiAmount);
 
     enum State {
-      FUNDING,
-      FAILED,
-      FUNDED
+        FUNDING,
+        FAILED,
+        FUNDED
     }
 
     // The current state of the contract
@@ -84,11 +83,14 @@ contract CrowdFinancingV1 is ReentrancyGuard {
         uint256 fundAmountMax,
         uint256 expirationTimestamp
     ) {
-      require(beneficiary != address(0), "Beneficiary is the zero address");
-      require(expirationTimestamp > block.timestamp && expirationTimestamp <= block.timestamp + 7776000, "Invalid expiration timestamp");
-      require(fundTargetMin < fundTargetMax, "Invalid fund targets");
-      require(fundAmountMin < fundAmountMax, "Invalid fund amounts");
-      require(fundAmountMin < fundTargetMax, "Invalid fund/target amounts");
+        require(beneficiary != address(0), "Beneficiary is the zero address");
+        require(
+            expirationTimestamp > block.timestamp && expirationTimestamp <= block.timestamp + 7776000,
+            "Invalid expiration timestamp"
+        );
+        require(fundTargetMin < fundTargetMax, "Invalid fund targets");
+        require(fundAmountMin < fundAmountMax, "Invalid fund amounts");
+        require(fundAmountMin < fundTargetMax, "Invalid fund/target amounts");
 
         _beneficiary = beneficiary;
         _fundTargetMin = fundTargetMin;
@@ -118,40 +120,40 @@ contract CrowdFinancingV1 is ReentrancyGuard {
      * - state must equal FUNDING
      */
     function deposit() public payable {
-      require(depositAllowed(), "Deposits are not allowed");
+        require(depositAllowed(), "Deposits are not allowed");
 
-      uint256 amount = msg.value;
-      address account = msg.sender;
-      uint256 total  = _deposits[account] + amount;
+        uint256 amount = msg.value;
+        address account = msg.sender;
+        uint256 total = _deposits[account] + amount;
 
-      require(total >= _fundAmountMin, "Deposit amount is too low");
-      require(total <= _fundAmountMax, "Deposit amount is too high");
+        require(total >= _fundAmountMin, "Deposit amount is too low");
+        require(total <= _fundAmountMax, "Deposit amount is too high");
 
-      _deposits[account] += amount;
-      _depositTotal += amount;
+        _deposits[account] += amount;
+        _depositTotal += amount;
 
-      emit Deposit(account, amount);
+        emit Deposit(account, amount);
     }
 
     /**
      * @return true if deposits are allowed
      */
     function depositAllowed() public view returns (bool) {
-      return _depositTotal <= _fundTargetMax && _state == State.FUNDING;
+        return _depositTotal <= _fundTargetMax && _state == State.FUNDING;
     }
 
     /**
      * @return the total amount of deposits for a given account
      */
     function depositAmount(address account) public view returns (uint256) {
-      return _deposits[account];
+        return _deposits[account];
     }
 
     /**
      * @return the total amount of deposits for all accounts
      */
     function depositTotal() public view returns (uint256) {
-      return _depositTotal;
+        return _depositTotal;
     }
 
     ///////////////////////////////////////////
@@ -165,29 +167,29 @@ contract CrowdFinancingV1 is ReentrancyGuard {
     * Emits a {Fail} event if the target was not met
     */
     function processFunds() public {
-      require(_state == State.FUNDING, "Raise isn't funded");
-      require(expired(), "Raise window is not expired");
+        require(_state == State.FUNDING, "Raise isn't funded");
+        require(expired(), "Raise window is not expired");
 
-      if(fundTargetMet()) {
-        _beneficiary.transfer(_depositTotal);
-        _state = State.FUNDED;
-        emit Transfer(_beneficiary, _depositTotal);
-      } else {
-        _state = State.FAILED;
-         emit Fail();
-      }
+        if (fundTargetMet()) {
+            _beneficiary.transfer(_depositTotal);
+            _state = State.FUNDED;
+            emit Transfer(_beneficiary, _depositTotal);
+        } else {
+            _state = State.FAILED;
+            emit Fail();
+        }
     }
 
     function expiresAt() public view returns (uint256) {
-      return _expirationTimestamp;
+        return _expirationTimestamp;
     }
 
     function expired() public view returns (bool) {
-      return block.timestamp >= _expirationTimestamp;
+        return block.timestamp >= _expirationTimestamp;
     }
 
     function fundTargetMet() public view returns (bool) {
-      return _depositTotal >= _fundTargetMin;
+        return _depositTotal >= _fundTargetMin;
     }
 
     ///////////////////////////////////////////
@@ -200,76 +202,76 @@ contract CrowdFinancingV1 is ReentrancyGuard {
      * Emits a {Payout} event.
      */
     receive() external payable {
-      require(_state == State.FUNDED, "Cannot accept payment");
-      emit Payout(msg.sender, msg.value);
+        require(_state == State.FUNDED, "Cannot accept payment");
+        emit Payout(msg.sender, msg.value);
     }
 
     /**
      * @return The total amount of wei paid back by the beneficiary
      */
     function payoutTotal() public view returns (uint256) {
-      return address(this).balance + _withdrawTotal;
+        return address(this).balance + _withdrawTotal;
     }
 
     /**
      * @return The total wei withdrawn for a given account
      */
     function withdrawsOf(address account) public view returns (uint256) {
-      return _withdraws[account];
+        return _withdraws[account];
     }
 
     /**
-      * @return true if the contract allows withdraws
-      */
+     * @return true if the contract allows withdraws
+     */
     function withdrawAllowed() public view returns (bool) {
-      return state() == State.FUNDED || state() == State.FAILED;
+        return state() == State.FUNDED || state() == State.FAILED;
     }
 
     /**
-      * @return The payout balance for the given account
-      */
+     * @return The payout balance for the given account
+     */
     function payoutBalance(address account) public view returns (uint256) {
-      uint256 accountPayout = ((_deposits[account] * 1e18) / _depositTotal) * (payoutTotal() / 1e18);
-      return accountPayout - withdrawsOf(account);
+        uint256 accountPayout = ((_deposits[account] * 1e18) / _depositTotal) * (payoutTotal() / 1e18);
+        return accountPayout - withdrawsOf(account);
     }
 
     /**
-      * Withdraw available funds to the sender, if withdraws are allowed, and
-      * the sender has a deposit balance (failed), or a payout balance (funded)
-      *
-      * Emits a {Withdraw} event.
-      */
+     * Withdraw available funds to the sender, if withdraws are allowed, and
+     * the sender has a deposit balance (failed), or a payout balance (funded)
+     *
+     * Emits a {Withdraw} event.
+     */
     function withdraw() public nonReentrant {
-      require(withdrawAllowed(), "Withdraw not allowed");
-      address account = msg.sender;
-      if(state() == State.FUNDED) {
-        withdrawPayout(account);
-      } else if(state() == State.FAILED) {
-        withdrawDeposit(account);
-      }
+        require(withdrawAllowed(), "Withdraw not allowed");
+        address account = msg.sender;
+        if (state() == State.FUNDED) {
+            withdrawPayout(account);
+        } else if (state() == State.FAILED) {
+            withdrawDeposit(account);
+        }
     }
 
     /**
      * @dev withdraw the initial deposit for hte given account
      */
     function withdrawDeposit(address account) private {
-      uint256 amount = _deposits[account];
-      require(amount > 0, "No balance");
-      payable(account).transfer(amount);
-      _deposits[account] = 0;
-      emit Withdraw(account, amount);
+        uint256 amount = _deposits[account];
+        require(amount > 0, "No balance");
+        payable(account).transfer(amount);
+        _deposits[account] = 0;
+        emit Withdraw(account, amount);
     }
 
     /**
      * @dev withdraw the available payout balance for the given account
      */
     function withdrawPayout(address account) private {
-      uint256 amount = payoutBalance(account);
-      require(amount > 0, "No balance");
-      payable(account).transfer(amount);
-      _withdraws[account] += amount;
-      _withdrawTotal += amount;
-      emit Withdraw(account, amount);
+        uint256 amount = payoutBalance(account);
+        require(amount > 0, "No balance");
+        payable(account).transfer(amount);
+        _withdraws[account] += amount;
+        _withdrawTotal += amount;
+        emit Withdraw(account, amount);
     }
 
     ///////////////////////////////////////////
@@ -280,6 +282,6 @@ contract CrowdFinancingV1 is ReentrancyGuard {
      * @return The current state of financing
      */
     function state() public view returns (State) {
-      return _state;
+        return _state;
     }
 }
