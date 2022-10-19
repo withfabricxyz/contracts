@@ -1,0 +1,10 @@
+#!/bin/bash
+
+cd "$(dirname $0)/.." || exit 1
+
+if ! command -v slither &> /dev/null; then
+  echo "Slither not in PATH, running setup"
+  ./script/setup
+fi
+
+slither . --config slither.config.json

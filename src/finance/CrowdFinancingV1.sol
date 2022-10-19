@@ -167,7 +167,7 @@ contract CrowdFinancingV1 is ReentrancyGuard {
     * Emits a {Fail} event if the target was not met
     */
     function processFunds() public {
-        require(_state == State.FUNDING, "Raise isn't funded");
+        require(_state == State.FUNDING, "Funds already processed");
         require(expired(), "Raise window is not expired");
 
         if (fundTargetMet()) {
@@ -210,6 +210,9 @@ contract CrowdFinancingV1 is ReentrancyGuard {
      * @return The total amount of wei paid back by the beneficiary
      */
     function payoutTotal() public view returns (uint256) {
+        if(state() != State.FUNDED) {
+          return 0;
+        }
         return address(this).balance + _withdrawTotal;
     }
 
@@ -231,8 +234,9 @@ contract CrowdFinancingV1 is ReentrancyGuard {
      * @return The payout balance for the given account
      */
     function payoutBalance(address account) public view returns (uint256) {
-        uint256 accountPayout = ((_deposits[account] * 1e18) / _depositTotal) * (payoutTotal() / 1e18);
-        return accountPayout - withdrawsOf(account);
+        // Multiply by 1e18 to maximize precision. Note, this can be slightly lossy (1 WEI)
+        uint256 depositPayoutTotal = (_deposits[account] * 1e18 * payoutTotal()) / (_depositTotal * 1e18);
+        return depositPayoutTotal - withdrawsOf(account);
     }
 
     /**

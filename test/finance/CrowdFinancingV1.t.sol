@@ -66,9 +66,16 @@ contract CrowdFinancingV1Test is Test {
     }
 
     function testInitialDeployment() public {
+        assertTrue(campaign.depositAllowed());
         assertFalse(campaign.withdrawAllowed());
         assertFalse(campaign.fundTargetMet());
         assertEq(0, campaign.depositTotal());
+    }
+
+    function testEarlyWithdraw() public {
+        vm.startPrank(depositor);
+        vm.expectRevert("Withdraw not allowed");
+        campaign.withdraw();
     }
 
     function testEmptyDeposit() public {
@@ -84,6 +91,7 @@ contract CrowdFinancingV1Test is Test {
         assertEq(1e18, address(campaign).balance);
         assertEq(1e18, campaign.depositTotal());
         assertEq(1e18, campaign.depositAmount(depositor));
+        assertEq(0, campaign.payoutTotal());
     }
 
     function testLargeDeposit() public {
@@ -144,6 +152,18 @@ contract CrowdFinancingV1Test is Test {
         campaign.processFunds();
     }
 
+    function testSecondProcess() public {
+        fundAndTransfer();
+        vm.expectRevert("Funds already processed");
+        campaign.processFunds();
+    }
+
+    function testSecondPassFail() public {
+        fundAndFail();
+        vm.expectRevert("Funds already processed");
+        campaign.processFunds();
+    }
+
     function testReturns() public {
         fundAndTransfer();
         assertEq(0, address(campaign).balance);
@@ -181,11 +201,15 @@ contract CrowdFinancingV1Test is Test {
         fundAndTransfer();
         yieldValue(1e18);
 
+        assertEq(campaign.payoutTotal(), 1e18);
+
         uint256 startBalance = depositor.balance;
         uint256 campaignBalance = address(campaign).balance;
 
         vm.startPrank(depositor);
+        assertEq(campaign.withdrawsOf(depositor), 0);
         campaign.withdraw();
+        assertEq(campaign.withdrawsOf(depositor), 333333333333333333);
         assertEq(campaign.payoutBalance(depositor), 0);
         assertEq(depositor.balance, startBalance + 333333333333333333);
         assertEq(campaign.payoutBalance(depositor3), 333333333333333333);

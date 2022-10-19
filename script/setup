@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 install_foundry() {
   if ! command -v foundryup &> /dev/null; then
     echo "Installing foundry..."
