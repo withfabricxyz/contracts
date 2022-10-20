@@ -48,10 +48,10 @@ contract CrowdFinancingV1 is ReentrancyGuard {
     address payable private immutable _beneficiary;
 
     // The minimum fund target to meet. Once funds meet or exceed this value the
-    // contract will lock and funders will not be able to withdrawal
+    // contract will lock and funders will not be able to withdraw
     uint256 private _fundTargetMin;
 
-    // The maximum fund target. If a transfer from a funder causes totalFunds to exeed
+    // The maximum fund target. If a transfer from a funder causes totalFunds to exceed
     // this value, the transaction will revert.
     uint256 private _fundTargetMax;
 
@@ -88,9 +88,10 @@ contract CrowdFinancingV1 is ReentrancyGuard {
             expirationTimestamp > block.timestamp && expirationTimestamp <= block.timestamp + 7776000,
             "Invalid expiration timestamp"
         );
-        require(fundTargetMin < fundTargetMax, "Invalid fund targets");
-        require(fundAmountMin < fundAmountMax, "Invalid fund amounts");
-        require(fundAmountMin < fundTargetMax, "Invalid fund/target amounts");
+        require(fundTargetMin > 0, "Min target must be >= 0");
+        require(fundTargetMin <= fundTargetMax, "Invalid fund targets");
+        require(fundAmountMin <= fundAmountMax, "Invalid fund amounts");
+        require(fundAmountMin <= fundTargetMax, "Invalid fund/target amounts");
 
         _beneficiary = beneficiary;
         _fundTargetMin = fundTargetMin;
@@ -116,7 +117,7 @@ contract CrowdFinancingV1 is ReentrancyGuard {
      * Requirements:
      *
      * - `msg.value` must be >= minimum fund amount and <= maximum fund amount
-     * - deposit total must not exeed max fund target
+     * - deposit total must not exceed max fund target
      * - state must equal FUNDING
      */
     function deposit() public payable {
@@ -139,7 +140,7 @@ contract CrowdFinancingV1 is ReentrancyGuard {
      * @return true if deposits are allowed
      */
     function depositAllowed() public view returns (bool) {
-        return _depositTotal <= _fundTargetMax && _state == State.FUNDING;
+        return _depositTotal < _fundTargetMax && _state == State.FUNDING;
     }
 
     /**
