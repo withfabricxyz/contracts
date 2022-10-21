@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.17;
 
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 /**
  * A minimal contract for accumulating funds from many accounts, transferring the balance
  * to a beneficiary, and allocating payouts to depositors as the beneficiary returns funds.
@@ -11,27 +13,27 @@ pragma solidity ^0.8.17;
  * raised funds to the beneficiary, and change the state of the contract to allow for payouts to occur.
  *
  * Payouts are two things:
- * 1. Eth sent to the contract by the beneficiary as ROI
- * 2. Funding accounts withdrawing their balance of payout
+ * 1. ERC20 tokens sent to the contract by the beneficiary as ROI
+ * 2. Funding accounts withdrawing their balance of payout in tokens
  *
  * If the fund target is not met in the fund raise window, the raise fails, and all depositors can
  * withdraw their initial investment.
  */
-contract CrowdFinancingV1 {
+contract ERC20CrowdFinancingV1 {
     // Emitted when an address deposits funds to the contract
-    event Deposit(address indexed account, uint256 weiAmount);
+    event Deposit(address indexed account, uint256 numTokens);
 
     // Emitted when an account withdraws their initial allocation or payouts
-    event Withdraw(address indexed account, uint256 weiAmount);
+    event Withdraw(address indexed account, uint256 numTokens);
 
     // Emitted when the entirety of deposits is transferred to the beneficiary
-    event Transfer(address indexed account, uint256 weiAmount);
+    event Transfer(address indexed account, uint256 numTokens);
 
     // Emitted when the targets are not met, and time has elapsed (calling processFunds)
     event Fail();
 
     // Emitted when eth is transferred to the contract, for depositers to withdraw their share
-    event Payout(address indexed account, uint256 weiAmount);
+    event Payout(address indexed account, uint256 numTokens);
 
     enum State {
         FUNDING,
@@ -43,7 +45,9 @@ contract CrowdFinancingV1 {
     State private _state;
 
     // The address of the beneficiary
-    address payable private immutable _beneficiary;
+    address private immutable _beneficiary;
+
+    address private immutable _token;
 
     // The minimum fund target to meet. Once funds meet or exceed this value the
     // contract will lock and funders will not be able to withdraw
@@ -53,10 +57,10 @@ contract CrowdFinancingV1 {
     // this value, the transaction will revert.
     uint256 private _fundTargetMax;
 
-    // The minimum wei an account can deposit
+    // The minimum tokens an account can deposit
     uint256 private _minDeposit;
 
-    // The maximum wei an account can deposit
+    // The maximum tokens an account can deposit
     uint256 private _maxDeposit;
 
     // The expiration timestamp for the fund
@@ -83,9 +87,11 @@ contract CrowdFinancingV1 {
         uint256 minDeposit,
         uint256 maxDeposit,
         uint256 startTimestamp,
-        uint256 endTimestamp
+        uint256 endTimestamp,
+        address tokenAddr
     ) {
         require(beneficiary != address(0), "Invalid beneficiary address");
+        require(tokenAddr != address(0), "Invalid token address");
         require(startTimestamp < endTimestamp, "Start must precede end");
         require(endTimestamp > block.timestamp && (endTimestamp - startTimestamp) < 7776000, "Invalid end time");
         require(fundTargetMin > 0, "Min target must be >= 0");
@@ -100,6 +106,7 @@ contract CrowdFinancingV1 {
         _maxDeposit = maxDeposit;
         _startTimestamp = startTimestamp;
         _expirationTimestamp = endTimestamp;
+        _token = tokenAddr;
 
         _depositTotal = 0;
         _withdrawTotal = 0;
@@ -111,7 +118,7 @@ contract CrowdFinancingV1 {
     ///////////////////////////////////////////
 
     /**
-     * Deposit eth into the contract track the deposit for calculating payout.
+     * Deposit tokens into the contract track the deposit for calculating payout.
      *
      * Emits a {Deposit} event if the target was not met
      *
@@ -121,11 +128,11 @@ contract CrowdFinancingV1 {
      * - deposit total must not exceed max fund target
      * - state must equal FUNDING
      */
-    function deposit() public payable {
+    function deposit() public {
         require(depositAllowed(), "Deposits are not allowed");
 
-        uint256 amount = msg.value;
         address account = msg.sender;
+        uint256 amount = IERC20(_token).allowance(account, address(this));
         uint256 total = _deposits[account] + amount;
 
         require(total >= _minDeposit, "Deposit amount is too low");
@@ -133,8 +140,9 @@ contract CrowdFinancingV1 {
 
         _deposits[account] += amount;
         _depositTotal += amount;
-
         emit Deposit(account, amount);
+
+        require(IERC20(_token).transferFrom(msg.sender, address(this), amount), "ERC20 transfer failed");
     }
 
     /**
@@ -175,7 +183,9 @@ contract CrowdFinancingV1 {
         if (fundTargetMet()) {
             _state = State.FUNDED;
             emit Transfer(_beneficiary, _depositTotal);
-            _beneficiary.transfer(_depositTotal);
+
+            // TODO: What if math is wrong here?
+            require(IERC20(_token).transfer(_beneficiary, _depositTotal), "ERC20 transfer failed");
         } else {
             _state = State.FAILED;
             emit Fail();
@@ -194,27 +204,29 @@ contract CrowdFinancingV1 {
     ///////////////////////////////////////////
 
     /**
-     * @dev Only allow transfers once funded
+     * @dev Alternative means of paying out via approve + transferFrom
      *
      * Emits a {Payout} event.
      */
-    receive() external payable {
+    function payout() external {
         require(_state == State.FUNDED, "Cannot accept payment");
-        emit Payout(msg.sender, msg.value);
+        uint256 amount = IERC20(_token).allowance(msg.sender, address(this));
+        emit Payout(msg.sender, amount);
+        require(IERC20(_token).transferFrom(msg.sender, address(this), amount), "ERC20 transfer failed");
     }
 
     /**
-     * @return The total amount of wei paid back by the beneficiary
+     * @return The total amount of tokens paid back by the beneficiary
      */
     function payoutTotal() public view returns (uint256) {
         if (state() != State.FUNDED) {
             return 0;
         }
-        return address(this).balance + _withdrawTotal;
+        return tokenBalance() + _withdrawTotal;
     }
 
     /**
-     * @return The total wei withdrawn for a given account
+     * @return The total tokens withdrawn for a given account
      */
     function withdrawsOf(address account) public view returns (uint256) {
         return _withdraws[account];
@@ -231,7 +243,7 @@ contract CrowdFinancingV1 {
      * @return The payout balance for the given account
      */
     function payoutBalance(address account) public view returns (uint256) {
-        // Multiply by 1e18 to maximize precision. Note, this can be slightly lossy (1 WEI)
+        // Multiply by 1e18 to maximize precision. Note, this can be slightly lossy
         uint256 depositPayoutTotal = (_deposits[account] * 1e18 * payoutTotal()) / (_depositTotal * 1e18);
         return depositPayoutTotal - withdrawsOf(account);
     }
@@ -260,7 +272,7 @@ contract CrowdFinancingV1 {
         require(amount > 0, "No balance");
         _deposits[account] = 0;
         emit Withdraw(account, amount);
-        payable(account).transfer(amount);
+        require(IERC20(_token).transfer(msg.sender, amount), "ERC20 transfer failed");
     }
 
     /**
@@ -272,7 +284,7 @@ contract CrowdFinancingV1 {
         _withdraws[account] += amount;
         _withdrawTotal += amount;
         emit Withdraw(account, amount);
-        payable(account).transfer(amount);
+        require(IERC20(_token).transfer(msg.sender, amount), "ERC20 transfer failed");
     }
 
     ///////////////////////////////////////////
@@ -287,14 +299,14 @@ contract CrowdFinancingV1 {
     }
 
     /**
-     * @return the minimum deposit in wei
+     * @return the minimum deposit in tokens
      */
     function minimumDeposit() public view returns (uint256) {
         return _minDeposit;
     }
 
     /**
-     * @return the maximum deposit in wei
+     * @return the maximum deposit in tokens
      */
     function maximumDeposit() public view returns (uint256) {
         return _maxDeposit;
@@ -333,6 +345,20 @@ contract CrowdFinancingV1 {
      */
     function beneficiaryAddress() public view returns (address) {
         return _beneficiary;
+    }
+
+    /**
+     * @return the address of the beneficiary
+     */
+    function tokenAddress() public view returns (address) {
+        return _token;
+    }
+
+    /**
+     * @return the address of the beneficiary
+     */
+    function tokenBalance() public view returns (uint256) {
+        return IERC20(_token).balanceOf(address(this));
     }
 
     /**
