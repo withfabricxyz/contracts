@@ -57,6 +57,7 @@ contract CrowdFinancingV1Test is Test {
         5e18, // 5ETH
         2e17, // 0.2ETH
         1e18,  // 1ETH
+        block.timestamp,
         block.timestamp + expirationFuture
       );
 
@@ -70,6 +71,28 @@ contract CrowdFinancingV1Test is Test {
         assertFalse(campaign.withdrawAllowed());
         assertFalse(campaign.fundTargetMet());
         assertEq(0, campaign.depositTotal());
+        assertEq(2e17, campaign.minimumDeposit());
+        assertEq(1e18, campaign.maximumDeposit());
+
+        assertEq(2e18, campaign.minimumFundTarget());
+        assertEq(5e18, campaign.maximumFundTarget());
+        assertEq(beneficiary, campaign.beneficiaryAddress());
+    }
+
+    function testStartChecks() public {
+        assertTrue(campaign.started());
+        assertEq(campaign.startsAt(), block.timestamp);
+        rewind(block.timestamp);
+        assertFalse(campaign.started());
+        assertFalse(campaign.depositAllowed());
+    }
+
+    function testEndChecks() public {
+        assertFalse(campaign.expired());
+        assertEq(campaign.expiresAt(), block.timestamp + expirationFuture);
+        vm.warp(block.timestamp + expirationFuture);
+        assertTrue(campaign.expired());
+        assertFalse(campaign.depositAllowed());
     }
 
     function testEarlyWithdraw() public {
@@ -132,9 +155,7 @@ contract CrowdFinancingV1Test is Test {
         deposit(depositor2, 1e18);
         deposit(depositor3, 1e18);
         assertTrue(campaign.fundTargetMet());
-        assertFalse(campaign.expired());
         vm.warp(campaign.expiresAt());
-        assertTrue(campaign.expired());
         assertFalse(campaign.withdrawAllowed());
         campaign.processFunds();
         assertTrue(CrowdFinancingV1.State.FUNDED == campaign.state());

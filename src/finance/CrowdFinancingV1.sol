@@ -2,8 +2,6 @@
 
 pragma solidity ^0.8.17;
 
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-
 /**
  * A minimal contract for accumulating funds from many accounts, transferring the balance
  * to a beneficiary, and allocating payouts to depositors as the beneficiary returns funds.
@@ -19,7 +17,7 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
  * If the fund target is not met in the fund raise window, the raise fails, and all depositors can
  * withdraw their initial investment.
  */
-contract CrowdFinancingV1 is ReentrancyGuard {
+contract CrowdFinancingV1 {
     // Emitted when an address deposits funds to the contract
     event Deposit(address indexed account, uint256 weiAmount);
 
@@ -56,10 +54,13 @@ contract CrowdFinancingV1 is ReentrancyGuard {
     uint256 private _fundTargetMax;
 
     // The minimum wei an account can deposit
-    uint256 private _fundAmountMin;
+    uint256 private _minDeposit;
 
     // The maximum wei an account can deposit
-    uint256 private _fundAmountMax;
+    uint256 private _maxDeposit;
+
+    // The expiration timestamp for the fund
+    uint256 private _startTimestamp;
 
     // The expiration timestamp for the fund
     uint256 private _expirationTimestamp;
@@ -79,26 +80,31 @@ contract CrowdFinancingV1 is ReentrancyGuard {
         address payable beneficiary,
         uint256 fundTargetMin,
         uint256 fundTargetMax,
-        uint256 fundAmountMin,
-        uint256 fundAmountMax,
-        uint256 expirationTimestamp
+        uint256 minDeposit,
+        uint256 maxDeposit,
+        uint256 startTimestamp,
+        uint256 endTimestamp
     ) {
-        require(beneficiary != address(0), "Beneficiary is the zero address");
+        require(beneficiary != address(0), "Invalid beneficiary address");
         require(
-            expirationTimestamp > block.timestamp && expirationTimestamp <= block.timestamp + 7776000,
-            "Invalid expiration timestamp"
+            startTimestamp < endTimestamp, "Start must precede end"
+        );
+        require(
+            endTimestamp > block.timestamp && (endTimestamp - startTimestamp) < 7776000,
+            "Invalid end time"
         );
         require(fundTargetMin > 0, "Min target must be >= 0");
-        require(fundTargetMin <= fundTargetMax, "Invalid fund targets");
-        require(fundAmountMin <= fundAmountMax, "Invalid fund amounts");
-        require(fundAmountMin <= fundTargetMax, "Invalid fund/target amounts");
+        require(fundTargetMin <= fundTargetMax, "Min target must be <= Max");
+        require(minDeposit <= maxDeposit, "Min deposit must be <= Max");
+        require(minDeposit <= fundTargetMax, "Min deposit must be <= Target Max");
 
         _beneficiary = beneficiary;
         _fundTargetMin = fundTargetMin;
         _fundTargetMax = fundTargetMax;
-        _fundAmountMin = fundAmountMin;
-        _fundAmountMax = fundAmountMax;
-        _expirationTimestamp = block.timestamp + expirationTimestamp;
+        _minDeposit = minDeposit;
+        _maxDeposit = maxDeposit;
+        _startTimestamp = startTimestamp;
+        _expirationTimestamp = endTimestamp;
 
         _depositTotal = 0;
         _withdrawTotal = 0;
@@ -127,8 +133,8 @@ contract CrowdFinancingV1 is ReentrancyGuard {
         address account = msg.sender;
         uint256 total = _deposits[account] + amount;
 
-        require(total >= _fundAmountMin, "Deposit amount is too low");
-        require(total <= _fundAmountMax, "Deposit amount is too high");
+        require(total >= _minDeposit, "Deposit amount is too low");
+        require(total <= _maxDeposit, "Deposit amount is too high");
 
         _deposits[account] += amount;
         _depositTotal += amount;
@@ -140,7 +146,7 @@ contract CrowdFinancingV1 is ReentrancyGuard {
      * @return true if deposits are allowed
      */
     function depositAllowed() public view returns (bool) {
-        return _depositTotal < _fundTargetMax && _state == State.FUNDING;
+        return _depositTotal < _fundTargetMax && _state == State.FUNDING && started() && !expired();
     }
 
     /**
@@ -172,23 +178,18 @@ contract CrowdFinancingV1 is ReentrancyGuard {
         require(expired(), "Raise window is not expired");
 
         if (fundTargetMet()) {
-            _beneficiary.transfer(_depositTotal);
             _state = State.FUNDED;
             emit Transfer(_beneficiary, _depositTotal);
+            _beneficiary.transfer(_depositTotal);
         } else {
             _state = State.FAILED;
             emit Fail();
         }
     }
 
-    function expiresAt() public view returns (uint256) {
-        return _expirationTimestamp;
-    }
-
-    function expired() public view returns (bool) {
-        return block.timestamp >= _expirationTimestamp;
-    }
-
+    /**
+     * @return true if the minimum fund target is met
+     */
     function fundTargetMet() public view returns (bool) {
         return _depositTotal >= _fundTargetMin;
     }
@@ -246,7 +247,7 @@ contract CrowdFinancingV1 is ReentrancyGuard {
      *
      * Emits a {Withdraw} event.
      */
-    function withdraw() public nonReentrant {
+    function withdraw() public {
         require(withdrawAllowed(), "Withdraw not allowed");
         address account = msg.sender;
         if (state() == State.FUNDED) {
@@ -262,9 +263,9 @@ contract CrowdFinancingV1 is ReentrancyGuard {
     function withdrawDeposit(address account) private {
         uint256 amount = _deposits[account];
         require(amount > 0, "No balance");
-        payable(account).transfer(amount);
         _deposits[account] = 0;
         emit Withdraw(account, amount);
+        payable(account).transfer(amount);
     }
 
     /**
@@ -273,10 +274,10 @@ contract CrowdFinancingV1 is ReentrancyGuard {
     function withdrawPayout(address account) private {
         uint256 amount = payoutBalance(account);
         require(amount > 0, "No balance");
-        payable(account).transfer(amount);
         _withdraws[account] += amount;
         _withdrawTotal += amount;
         emit Withdraw(account, amount);
+        payable(account).transfer(amount);
     }
 
     ///////////////////////////////////////////
@@ -289,4 +290,68 @@ contract CrowdFinancingV1 is ReentrancyGuard {
     function state() public view returns (State) {
         return _state;
     }
+
+    /**
+     * @return the minimum deposit in wei
+     */
+    function minimumDeposit() public view returns (uint256) {
+        return _minDeposit;
+    }
+
+    /**
+     * @return the maximum deposit in wei
+     */
+    function maximumDeposit() public view returns (uint256) {
+        return _maxDeposit;
+    }
+
+    /**
+     * @return the unix timestamp in seconds when the funding phase starts
+     */
+    function startsAt() public view returns (uint256) {
+        return _startTimestamp;
+    }
+
+    /**
+     * @return true if the funding phase started
+     */
+    function started() public view returns (bool) {
+        return block.timestamp >= _startTimestamp;
+    }
+
+    /**
+     * @return the unix timestamp in seconds when the funding phase ends
+     */
+    function expiresAt() public view returns (uint256) {
+        return _expirationTimestamp;
+    }
+
+    /**
+     * @return true if the funding phase exipired
+     */
+    function expired() public view returns (bool) {
+        return block.timestamp >= _expirationTimestamp;
+    }
+
+    /**
+     * @return the address of the beneficiary
+     */
+    function beneficiaryAddress() public view returns (address) {
+        return _beneficiary;
+    }
+
+    /**
+     * @return the minimum fund target for the round to be considered successful
+     */
+    function minimumFundTarget() public view returns (uint256) {
+        return _fundTargetMin;
+    }
+
+    /**
+     * @return the maximum fund target for the round to be considered successful
+     */
+    function maximumFundTarget() public view returns (uint256) {
+        return _fundTargetMax;
+    }
+
 }
