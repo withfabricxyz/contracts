@@ -21,3 +21,7 @@ Other useful tools
 forge coverage
 forge fmt
 ```
+
+### Signing Commits
+
+All commits and tags for this repository should be signed.
