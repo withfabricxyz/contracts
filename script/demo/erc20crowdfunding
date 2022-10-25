@@ -1,0 +1,71 @@
+#!/usr/bin/env ruby
+
+require_relative 'lib/utils'
+
+ANVIL_PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+
+ANVIL_ACCOUNTS = {
+  '0x70997970c51812dc3a010c7d01b50e0d17dc79c8' => '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d',
+  '0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc' => '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a',
+  '0x90f79bf6eb2c4f870365e785982e1f101e93b906' => '0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6',
+}
+
+# # Deploy a demo token, in the real world this would be USDC/DAI, etc
+token_addr = deploy("ERC20Token", ANVIL_PRIVATE_KEY, "FIAT", "FIAT", 1e20)
+
+ANVIL_ACCOUNTS.each do |pub, pri|
+  transfer_tokens(token_addr, pub, 1_000_000, ANVIL_PRIVATE_KEY)
+end
+
+# # Deploy our ERC20 contract, no constructor args
+cfc_addr = deploy("ERC20CrowdFinancingV1", ANVIL_PRIVATE_KEY)
+
+# # Deploy the Beacon for ERC20CF
+beacon_addr = deploy("FabricBeacon", ANVIL_PRIVATE_KEY, cfc_addr)
+
+# Now deploy the proxy, referencing the beacon, and passing the initialization params
+
+
+# address payable beneficiary,
+# uint256 fundTargetMin,
+# uint256 fundTargetMax,
+# uint256 minDeposit,
+# uint256 maxDeposit,
+# uint256 startTimestamp,
+# uint256 endTimestamp,
+# address tokenAddr
+cfc_params = [
+  ['address', '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266'],
+  ['uint256', 50_000],
+  ['uint256', 5_000_000],
+  ['uint256', 10_000],
+  ['uint256', 100_000],
+  ['uint256', Time.now.to_i],
+  ['uint256', Time.now.to_i + 60 * 60],
+  ['address', token_addr]
+]
+
+instance_addr = deploy("FabricProxy",  ANVIL_PRIVATE_KEY, beacon_addr, initialize_args(cfc_params))
+
+puts
+puts "Nice, the instance is deployed at: #{instance_addr}"
+puts
+puts "Example commands to run"
+
+[
+  "tokenBalance()(uint256)",
+  "depositAllowed()(bool)"
+].each { |sig|
+  puts "cast call #{instance_addr} \"#{sig}\""
+}
+
+puts '--------------'
+
+ANVIL_ACCOUNTS.each do |pub, pri|
+  puts "cast send #{token_addr} \"approve(address, uint256)\" #{instance_addr} #{75_000} --private-key #{pri}"
+  puts "cast send #{instance_addr} \"deposit()\" --private-key #{pri}"
+  puts
+end
+
+
+

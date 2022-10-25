@@ -64,16 +64,17 @@ contract ERC20CrowdFinancingV1Test is Test {
 
     function setUp() public {
         setupToken();
-        campaign = new ERC20CrowdFinancingV1(
-        beneficiary,
-        2e18, // 2ETH
-        5e18, // 5ETH
-        2e17, // 0.2ETH
-        1e18,  // 1ETH
-        block.timestamp,
-        block.timestamp + expirationFuture,
-        address(token)
-      );
+        campaign = new ERC20CrowdFinancingV1();
+        campaign.initialize(
+            beneficiary,
+            2e18, // 2ETH
+            5e18, // 5ETH
+            2e17, // 0.2ETH
+            1e18, // 1ETH
+            block.timestamp,
+            block.timestamp + expirationFuture,
+            address(token)
+        );
 
         deal(depositor, 1e18);
         deal(depositor2, 1e18);
@@ -96,6 +97,20 @@ contract ERC20CrowdFinancingV1Test is Test {
         assertEq(2e18, campaign.minimumFundTarget());
         assertEq(5e18, campaign.maximumFundTarget());
         assertEq(beneficiary, campaign.beneficiaryAddress());
+    }
+
+    function testReinit() public {
+        vm.expectRevert("Initializable: contract is already initialized");
+        campaign.initialize(
+            beneficiary,
+            2e18, // 2ETH
+            5e18, // 5ETH
+            2e17, // 0.2ETH
+            1e18, // 1ETH
+            block.timestamp,
+            block.timestamp + expirationFuture,
+            address(token)
+        );
     }
 
     function testStartChecks() public {

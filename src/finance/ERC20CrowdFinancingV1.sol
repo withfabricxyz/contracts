@@ -3,6 +3,7 @@
 pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin-upgradeable/contracts/proxy/utils/Initializable.sol";
 
 /**
  * A minimal contract for accumulating funds from many accounts, transferring the balance
@@ -19,7 +20,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * If the fund target is not met in the fund raise window, the raise fails, and all depositors can
  * withdraw their initial investment.
  */
-contract ERC20CrowdFinancingV1 {
+contract ERC20CrowdFinancingV1 is Initializable {
     // Emitted when an address deposits funds to the contract
     event Deposit(address indexed account, uint256 numTokens);
 
@@ -45,9 +46,9 @@ contract ERC20CrowdFinancingV1 {
     State private _state;
 
     // The address of the beneficiary
-    address private immutable _beneficiary;
+    address private _beneficiary;
 
-    address private immutable _token;
+    address private _token;
 
     // The minimum fund target to meet. Once funds meet or exceed this value the
     // contract will lock and funders will not be able to withdraw
@@ -63,7 +64,7 @@ contract ERC20CrowdFinancingV1 {
     // The maximum tokens an account can deposit
     uint256 private _maxDeposit;
 
-    // The expiration timestamp for the fund
+    // The starting timestamp for the fund
     uint256 private _startTimestamp;
 
     // The expiration timestamp for the fund
@@ -80,7 +81,14 @@ contract ERC20CrowdFinancingV1 {
     // If the campaign is successful, then we track withdraw
     mapping(address => uint256) private _withdraws;
 
-    constructor(
+    // This contract is intended for use with proxies, so we prevent
+    // direct initialization. This contract will fail to function and any interaction
+    // with the contract involving deposits, etc, will revert.
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         address payable beneficiary,
         uint256 fundTargetMin,
         uint256 fundTargetMax,
@@ -89,7 +97,7 @@ contract ERC20CrowdFinancingV1 {
         uint256 startTimestamp,
         uint256 endTimestamp,
         address tokenAddr
-    ) {
+    ) public initializer {
         require(beneficiary != address(0), "Invalid beneficiary address");
         require(tokenAddr != address(0), "Invalid token address");
         require(startTimestamp < endTimestamp, "Start must precede end");
