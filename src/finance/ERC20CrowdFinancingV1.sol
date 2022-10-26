@@ -81,14 +81,12 @@ contract ERC20CrowdFinancingV1 is Initializable {
     // If the campaign is successful, then we track withdraw
     mapping(address => uint256) private _withdraws;
 
-
     // Fee related items
     address private _feeCollector;
     uint256 private _feeUpfrontBips;
     uint256 private _feePayoutBips;
     uint256 private _feesAvailable;
     uint256 private _feesCollected;
-
 
     // This contract is intended for use with proxies, so we prevent
     // direct initialization. This contract will fail to function and any interaction
@@ -118,7 +116,6 @@ contract ERC20CrowdFinancingV1 is Initializable {
         require(fundTargetMin <= fundTargetMax, "Min target must be <= Max");
         require(minDeposit <= maxDeposit, "Min deposit must be <= Max");
         require(minDeposit <= fundTargetMax, "Min deposit must be <= Target Max");
-
 
         _beneficiary = beneficiary;
         _fundTargetMin = fundTargetMin;
@@ -178,6 +175,13 @@ contract ERC20CrowdFinancingV1 is Initializable {
     }
 
     /**
+     * @return the percentage of ownership represented as parts per million
+     */
+    function ownershipPPM(address account) public view returns (uint256) {
+        return (_deposits[account] * 1_000_000) / _depositTotal;
+    }
+
+    /**
      * @return the total amount of deposits for a given account
      */
     function depositAmount(address account) public view returns (uint256) {
@@ -216,9 +220,9 @@ contract ERC20CrowdFinancingV1 is Initializable {
 
             // If any upfront fee is present, pay that out to the collector now, so the funds
             // are not available for depositors to withdraw
-            if(feeAmount > 0) {
-              emit Transfer(_feeCollector, feeAmount);
-              require(IERC20(_token).transfer(_feeCollector, feeAmount), "ERC20 Fee transfer failed");
+            if (feeAmount > 0) {
+                emit Transfer(_feeCollector, feeAmount);
+                require(IERC20(_token).transfer(_feeCollector, feeAmount), "ERC20 Fee transfer failed");
             }
 
             emit Transfer(_beneficiary, transferAmount);
@@ -230,23 +234,20 @@ contract ERC20CrowdFinancingV1 is Initializable {
     }
 
     function allocateFeePayout() private {
-      if(_feeCollector == address(0) || _feePayoutBips == 0) {
-        return;
-      }
-      uint256 feeAllocation = (_depositTotal * _feePayoutBips) / (10_000);
+        if (_feeCollector == address(0) || _feePayoutBips == 0) {
+            return;
+        }
+        uint256 feeAllocation = (_depositTotal * _feePayoutBips) / (10_000);
 
-      // TODO: There must be better math for getting this very close
-      feeAllocation += (feeAllocation * _feePayoutBips) / (10_000);
-
-      _deposits[_feeCollector] = feeAllocation;
-      _depositTotal += feeAllocation;
+        _deposits[_feeCollector] = feeAllocation;
+        _depositTotal += feeAllocation;
     }
 
     function calculateUpfrontFee() private view returns (uint256) {
-      if(_feeCollector == address(0) || _feeUpfrontBips == 0) {
-        return 0;
-      }
-      return (_depositTotal * _feeUpfrontBips) / (10_000);
+        if (_feeCollector == address(0) || _feeUpfrontBips == 0) {
+            return 0;
+        }
+        return (_depositTotal * _feeUpfrontBips) / (10_000);
     }
 
     /**
@@ -265,9 +266,10 @@ contract ERC20CrowdFinancingV1 is Initializable {
      *
      * Emits a {Payout} event.
      */
-    function payout() external {
+    function makePayment() external {
         require(_state == State.FUNDED, "Cannot accept payment");
         uint256 amount = IERC20(_token).allowance(msg.sender, address(this));
+        require(amount > 0, "Token allowance is 0");
         emit Payout(msg.sender, amount);
         require(IERC20(_token).transferFrom(msg.sender, address(this), amount), "ERC20 transfer failed");
     }
@@ -296,13 +298,27 @@ contract ERC20CrowdFinancingV1 is Initializable {
         return state() == State.FUNDED || state() == State.FAILED;
     }
 
+    function payoutsMadeTo(address account) private view returns (uint256) {
+        // Multiply by 1e18 to maximize precision. Note, this can be slightly lossy
+        return (_deposits[account] * 1e18 * payoutTotal()) / (_depositTotal * 1e18);
+    }
+
     /**
      * @return The payout balance for the given account
      */
     function payoutBalance(address account) public view returns (uint256) {
-        // Multiply by 1e18 to maximize precision. Note, this can be slightly lossy
-        uint256 depositPayoutTotal = (_deposits[account] * 1e18 * payoutTotal()) / (_depositTotal * 1e18);
-        return depositPayoutTotal - withdrawsOf(account);
+        return payoutsMadeTo(account) - withdrawsOf(account);
+    }
+
+    /**
+     * @return The realzied profit for
+     */
+    function returnOnInvestment(address account) public view returns (uint256) {
+        uint256 _payout = payoutsMadeTo(account);
+        if (_payout <= _deposits[account]) {
+            return 0;
+        }
+        return _payout - _deposits[account];
     }
 
     /**

@@ -73,7 +73,7 @@ contract ERC20CrowdFinancingV1Test is Test {
         token = new ERC20Token(
         "FIAT",
         "FIAT",
-        1e20
+        1e21
       );
     }
 
@@ -101,6 +101,7 @@ contract ERC20CrowdFinancingV1Test is Test {
             0
         );
 
+        // For Gas...
         deal(depositor, 1e18);
         deal(depositor2, 1e18);
         deal(depositor3, 1e18);
@@ -118,7 +119,7 @@ contract ERC20CrowdFinancingV1Test is Test {
         assertEq(0, campaign.depositTotal());
         assertEq(2e17, campaign.minimumDeposit());
         assertEq(1e18, campaign.maximumDeposit());
-
+        assertEq(address(token), campaign.tokenAddress());
         assertEq(2e18, campaign.minimumFundTarget());
         assertEq(5e18, campaign.maximumFundTarget());
         assertEq(beneficiary, campaign.beneficiaryAddress());
@@ -208,6 +209,8 @@ contract ERC20CrowdFinancingV1Test is Test {
         deposit(depositor, 1e18);
         deposit(depositor2, 1e18);
         deposit(depositor3, 1e18);
+        assertEq(0, campaign.returnOnInvestment(depositor));
+        assertEq(333333, campaign.ownershipPPM(depositor));
         assertEq(3e18, campaign.tokenBalance());
         assertTrue(campaign.fundTargetMet());
     }
@@ -264,6 +267,31 @@ contract ERC20CrowdFinancingV1Test is Test {
         assertEq(333333333333333333, campaign.payoutBalance(depositor2));
         assertEq(333333333333333333, campaign.payoutBalance(depositor3));
         assertEq(0, campaign.payoutBalance(depositorEmpty));
+    }
+
+    function testProfit() public {
+        fundAndTransfer();
+        dealTokens(beneficiary, 1e20);
+        yieldValue(1e19);
+        assertEq(3333333333333333333, campaign.payoutBalance(depositor));
+        assertEq(3333333333333333333 - 1e18, campaign.returnOnInvestment(depositor));
+    }
+
+    function testReturnsViaPayoutFn() public {
+        vm.expectRevert("Cannot accept payment");
+        campaign.makePayment();
+
+        fundAndTransfer();
+        assertEq(0, balanceOf(address(campaign)));
+        vm.startPrank(beneficiary);
+        token.approve(address(campaign), 1e18);
+        campaign.makePayment();
+
+        vm.expectRevert("Token allowance is 0");
+        campaign.makePayment();
+
+        vm.stopPrank();
+        assertEq(1e18, balanceOf(address(campaign)));
     }
 
     function testFundingFailure() public {
@@ -352,32 +380,31 @@ contract ERC20CrowdFinancingV1Test is Test {
     // TODO: Fuzz test on deposits, etc
 
     function testUpfrontFees() public {
-      ERC20CrowdFinancingV1 _campaign = createFeeCampaign(100, 0);
-      fundAndTransferCampaign(_campaign);
-      assertEq(3e18 - 3e16, balanceOf(beneficiary));
-      assertEq(3e16, balanceOf(feeCollector));
-      assertEq(0, balanceOf(address(_campaign)));
+        ERC20CrowdFinancingV1 _campaign = createFeeCampaign(100, 0);
+        fundAndTransferCampaign(_campaign);
+        assertEq(3e18 - 3e16, balanceOf(beneficiary));
+        assertEq(3e16, balanceOf(feeCollector));
+        assertEq(0, balanceOf(address(_campaign)));
     }
 
     function testUpfrontFeesSplit() public {
-      ERC20CrowdFinancingV1 _campaign = createFeeCampaign(5000, 0); // 50%!
-      fundAndTransferCampaign(_campaign);
-      assertEq(balanceOf(beneficiary), 1.5e18);
-      assertEq(balanceOf(feeCollector), 1.5e18);
+        ERC20CrowdFinancingV1 _campaign = createFeeCampaign(5000, 0); // 50%!
+        fundAndTransferCampaign(_campaign);
+        assertEq(balanceOf(beneficiary), 1.5e18);
+        assertEq(balanceOf(feeCollector), 1.5e18);
     }
 
     function testPayoutFees() public {
-      ERC20CrowdFinancingV1 _campaign = createFeeCampaign(0, 250);
-      fundAndTransferCampaign(_campaign);
-      yieldValue(_campaign, 1e18);
+        ERC20CrowdFinancingV1 _campaign = createFeeCampaign(0, 250);
+        fundAndTransferCampaign(_campaign);
+        yieldValue(_campaign, 1e18);
 
-      withdraw(_campaign, depositor);
-      withdraw(_campaign, depositor2);
-      withdraw(_campaign, depositor3);
-      withdraw(_campaign, feeCollector);
+        withdraw(_campaign, depositor);
+        withdraw(_campaign, depositor2);
+        withdraw(_campaign, depositor3);
+        withdraw(_campaign, feeCollector);
 
-      assertApproxEqAbs(0, balanceOf(address(_campaign)), 4);
-      assertApproxEqAbs(25000000000000000, balanceOf(feeCollector), 1e14);
+        assertApproxEqAbs(0, balanceOf(address(_campaign)), 4);
+        assertApproxEqAbs(25000000000000000, balanceOf(feeCollector), 1e15);
     }
-
 }
