@@ -81,6 +81,15 @@ contract ERC20CrowdFinancingV1 is Initializable {
     // If the campaign is successful, then we track withdraw
     mapping(address => uint256) private _withdraws;
 
+
+    // Fee related items
+    address private _feeCollector;
+    uint256 private _feeUpfrontBips;
+    uint256 private _feePayoutBips;
+    uint256 private _feesAvailable;
+    uint256 private _feesCollected;
+
+
     // This contract is intended for use with proxies, so we prevent
     // direct initialization. This contract will fail to function and any interaction
     // with the contract involving deposits, etc, will revert.
@@ -96,7 +105,10 @@ contract ERC20CrowdFinancingV1 is Initializable {
         uint256 maxDeposit,
         uint256 startTimestamp,
         uint256 endTimestamp,
-        address tokenAddr
+        address tokenAddr,
+        address feeCollector,
+        uint256 feeUpfrontBips,
+        uint256 feePayoutBips
     ) public initializer {
         require(beneficiary != address(0), "Invalid beneficiary address");
         require(tokenAddr != address(0), "Invalid token address");
@@ -107,6 +119,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
         require(minDeposit <= maxDeposit, "Min deposit must be <= Max");
         require(minDeposit <= fundTargetMax, "Min deposit must be <= Target Max");
 
+
         _beneficiary = beneficiary;
         _fundTargetMin = fundTargetMin;
         _fundTargetMax = fundTargetMax;
@@ -115,6 +128,10 @@ contract ERC20CrowdFinancingV1 is Initializable {
         _startTimestamp = startTimestamp;
         _expirationTimestamp = endTimestamp;
         _token = tokenAddr;
+
+        _feeCollector = feeCollector;
+        _feeUpfrontBips = feeUpfrontBips;
+        _feePayoutBips = feePayoutBips;
 
         _depositTotal = 0;
         _withdrawTotal = 0;
@@ -190,14 +207,46 @@ contract ERC20CrowdFinancingV1 is Initializable {
 
         if (fundTargetMet()) {
             _state = State.FUNDED;
-            emit Transfer(_beneficiary, _depositTotal);
 
-            // TODO: What if math is wrong here?
-            require(IERC20(_token).transfer(_beneficiary, _depositTotal), "ERC20 transfer failed");
+            uint256 feeAmount = calculateUpfrontFee();
+            uint256 transferAmount = _depositTotal - feeAmount;
+
+            // This can mutate _depositTotal, so that withdraws don't over withdraw
+            allocateFeePayout();
+
+            // If any upfront fee is present, pay that out to the collector now, so the funds
+            // are not available for depositors to withdraw
+            if(feeAmount > 0) {
+              emit Transfer(_feeCollector, feeAmount);
+              require(IERC20(_token).transfer(_feeCollector, feeAmount), "ERC20 Fee transfer failed");
+            }
+
+            emit Transfer(_beneficiary, transferAmount);
+            require(IERC20(_token).transfer(_beneficiary, transferAmount), "ERC20 transfer failed");
         } else {
             _state = State.FAILED;
             emit Fail();
         }
+    }
+
+    function allocateFeePayout() private {
+      if(_feeCollector == address(0) || _feePayoutBips == 0) {
+        return;
+      }
+      uint256 feeAllocation = (_depositTotal * _feePayoutBips) / (10_000);
+
+      // TODO: There must be better math for getting this very close
+      feeAllocation += (feeAllocation * _feePayoutBips) / (10_000);
+
+      _deposits[_feeCollector] = feeAllocation;
+      _depositTotal += feeAllocation;
+    }
+
+    function calculateUpfrontFee() private view returns (uint256) {
+      if(_feeCollector == address(0) || _feeUpfrontBips == 0) {
+        return 0;
+      }
+      return (_depositTotal * _feeUpfrontBips) / (10_000);
     }
 
     /**
