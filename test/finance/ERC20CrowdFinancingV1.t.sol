@@ -377,8 +377,6 @@ contract ERC20CrowdFinancingV1Test is Test {
         return withFees;
     }
 
-    // TODO: Fuzz test on deposits, etc
-
     function testUpfrontFees() public {
         ERC20CrowdFinancingV1 _campaign = createFeeCampaign(100, 0);
         fundAndTransferCampaign(_campaign);

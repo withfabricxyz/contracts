@@ -6,34 +6,57 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin-upgradeable/contracts/proxy/utils/Initializable.sol";
 
 /**
+ *
+ * @title Crowd Financing with Payback
+ * @author Dan Simpson
+ *
  * A minimal contract for accumulating funds from many accounts, transferring the balance
  * to a beneficiary, and allocating payouts to depositors as the beneficiary returns funds.
  *
- * The primary purpose of this contract is financing a trusted beneficiary, with the expectation of ROI.
+ * The primary purpose of this contract is financing a trusted beneficiary with the expectation of ROI.
  * If the fund target is met within the fund raising window, then processing the funds will transfer all
- * raised funds to the beneficiary, and change the state of the contract to allow for payouts to occur.
- *
- * Payouts are two things:
- * 1. ERC20 tokens sent to the contract by the beneficiary as ROI
- * 2. Funding accounts withdrawing their balance of payout in tokens
+ * raised funds to the beneficiary, minus optional fee, and change the state of the contract to allow for payouts to occur.
  *
  * If the fund target is not met in the fund raise window, the raise fails, and all depositors can
  * withdraw their initial investment.
+ *
+ * Deposits:
+ * Accounts deposit tokens by first creating an allowance in the token contract, and then
+ * calling the deposit function, which will transfer the entire allowance if all contraints
+ * are satisfied.
+ *
+ * Payouts:
+ * The beneficiary makes payments by transfering tokens to the contract, or invoking the makePayment
+ * function which works similar to the deposit function.
+ *
+ * As the payout balance accrues, depositors can invoke the withdraw function to transfer their
+ * payout balance.
+ *
+ * Fees:
+ * The contract can be initialized with an optional fee collector address with options for two
+ * kinds of fees, in basis points. A value of 250 would mean 2.5%.
+ *
+ * Type A Fee: Upon processing, a percentage of the total deposit amount is carved out and sent
+ * to the fee collector. The remaining balance is sent to the beneficiary.
+ * Type B Fee: Upon processing, the fee collector is added to the cap table as a depositor with a
+ * value commensurate with the fee, and the total deposits is also increased by that amount.
+ *
  */
 contract ERC20CrowdFinancingV1 is Initializable {
-    // Emitted when an address deposits funds to the contract
+    /// @notice Emitted when an account deposits funds to the contract
     event Deposit(address indexed account, uint256 numTokens);
 
-    // Emitted when an account withdraws their initial allocation or payouts
+    /// @notice Emitted when an account withdraws their initial deposit or payout balance
     event Withdraw(address indexed account, uint256 numTokens);
 
-    // Emitted when the entirety of deposits is transferred to the beneficiary
+    /// @notice Emitted when the funds are transferred to the beneficiary and when
+    /// fees are transferred to the fee collector, if specified
     event Transfer(address indexed account, uint256 numTokens);
 
-    // Emitted when the targets are not met, and time has elapsed (calling processFunds)
+    /// @notice Emitted on processing if time has elapsed and the target was not met
     event Fail();
 
-    // Emitted when eth is transferred to the contract, for depositers to withdraw their share
+    /// @notice Emitted when makePayment is invoked by the beneficiary
     event Payout(address indexed account, uint256 numTokens);
 
     enum State {
@@ -48,10 +71,11 @@ contract ERC20CrowdFinancingV1 is Initializable {
     // The address of the beneficiary
     address private _beneficiary;
 
-    address private _token;
+    // The token used for payments
+    IERC20 private _token;
 
     // The minimum fund target to meet. Once funds meet or exceed this value the
-    // contract will lock and funders will not be able to withdraw
+    // contract will transfer funds upon processing
     uint256 private _fundTargetMin;
 
     // The maximum fund target. If a transfer from a funder causes totalFunds to exceed
@@ -76,25 +100,46 @@ contract ERC20CrowdFinancingV1 is Initializable {
     // The total amount withdrawn for all accounts
     uint256 private _withdrawTotal;
 
+    // The mapping from account to what that account has deposited
     mapping(address => uint256) private _deposits;
 
-    // If the campaign is successful, then we track withdraw
+    // The mapping from account to what that account has withdrawn
     mapping(address => uint256) private _withdraws;
 
     // Fee related items
-    address private _feeCollector;
-    uint256 private _feeUpfrontBips;
-    uint256 private _feePayoutBips;
-    uint256 private _feesAvailable;
-    uint256 private _feesCollected;
 
-    // This contract is intended for use with proxies, so we prevent
-    // direct initialization. This contract will fail to function and any interaction
-    // with the contract involving deposits, etc, will revert.
+    // The optional address of the fee collector
+    address private _feeCollector;
+
+    // The fee in basis points, transferred to the fee collector when
+    // processing a successful raise
+    uint256 private _feeUpfrontBips;
+
+    // The fee in basis points, used to dilute the cap table when
+    // processing a succesful raise
+    uint256 private _feePayoutBips;
+
+    /// @notice This contract is intended for use with proxies, so we prevent direct
+    /// initialization. This contract will fail to function properly without a proxy
     constructor() {
         _disableInitializers();
     }
 
+    /**
+     * @notice Initialize acts as the constructor, as this contract is intended to work with proxy contracts.
+     *
+     * @param beneficiary the address of the beneficiary, where funds are sent on success
+     * @param fundTargetMin the minimum funding amount acceptible for successful financing
+     * @param fundTargetMax the maximum funding amount accepted for the financing round
+     * @param minDeposit the minimum deposit an account can make in one deposit
+     * @param maxDeposit the maximum deposit an account can make in one or more deposits
+     * @param startTimestamp the UNIX time in seconds denoting when deposits can start
+     * @param endTimestamp the UNIX time in seconds denoting when deposits are no longer allowed
+     * @param tokenAddr the address of the ERC20 token used for payments
+     * @param feeCollector the address of the fee collector, or the 0 address if no fees are collected
+     * @param feeUpfrontBips the upfront fee in basis points, calculated during processing
+     * @param feePayoutBips the payout fee in basis points. Dilutes the cap table for fee collection
+     */
     function initialize(
         address payable beneficiary,
         uint256 fundTargetMin,
@@ -124,7 +169,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
         _maxDeposit = maxDeposit;
         _startTimestamp = startTimestamp;
         _expirationTimestamp = endTimestamp;
-        _token = tokenAddr;
+        _token = IERC20(tokenAddr);
 
         _feeCollector = feeCollector;
         _feeUpfrontBips = feeUpfrontBips;
@@ -140,7 +185,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
     ///////////////////////////////////////////
 
     /**
-     * Deposit tokens into the contract track the deposit for calculating payout.
+     * @notice Deposit tokens into the contract and track amount for calculating payout.
      *
      * Emits a {Deposit} event if the target was not met
      *
@@ -154,7 +199,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
         require(depositAllowed(), "Deposits are not allowed");
 
         address account = msg.sender;
-        uint256 amount = IERC20(_token).allowance(account, address(this));
+        uint256 amount = _token.allowance(account, address(this));
         uint256 total = _deposits[account] + amount;
 
         require(total >= _minDeposit, "Deposit amount is too low");
@@ -164,7 +209,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
         _depositTotal += amount;
         emit Deposit(account, amount);
 
-        require(IERC20(_token).transferFrom(msg.sender, address(this), amount), "ERC20 transfer failed");
+        require(_token.transferFrom(msg.sender, address(this), amount), "ERC20 transfer failed");
     }
 
     /**
@@ -175,6 +220,8 @@ contract ERC20CrowdFinancingV1 is Initializable {
     }
 
     /**
+     * @param account the address of a depositor
+     *
      * @return the percentage of ownership represented as parts per million
      */
     function ownershipPPM(address account) public view returns (uint256) {
@@ -182,6 +229,8 @@ contract ERC20CrowdFinancingV1 is Initializable {
     }
 
     /**
+     * @param account the address of a depositor
+     *
      * @return the total amount of deposits for a given account
      */
     function depositAmount(address account) public view returns (uint256) {
@@ -189,7 +238,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
     }
 
     /**
-     * @return the total amount of deposits for all accounts
+     * @return the total deposit amount for all accounts
      */
     function depositTotal() public view returns (uint256) {
         return _depositTotal;
@@ -199,12 +248,12 @@ contract ERC20CrowdFinancingV1 is Initializable {
     // Phase 2: Transfer or Fail
     ///////////////////////////////////////////
 
-    /*
-    * Transfer funds to the beneficiary and change the state
-    *
-    * Emits a {Transfer} event if the target was met and funds transfered
-    * Emits a {Fail} event if the target was not met
-    */
+    /**
+     * @notice Transfer funds to the beneficiary and change the state
+     *
+     * Emits a {Transfer} event if the target was met and funds transfered
+     * Emits a {Fail} event if the target was not met
+     */
     function processFunds() public {
         require(_state == State.FUNDING, "Funds already processed");
         require(expired(), "Raise window is not expired");
@@ -222,17 +271,21 @@ contract ERC20CrowdFinancingV1 is Initializable {
             // are not available for depositors to withdraw
             if (feeAmount > 0) {
                 emit Transfer(_feeCollector, feeAmount);
-                require(IERC20(_token).transfer(_feeCollector, feeAmount), "ERC20 Fee transfer failed");
+                require(_token.transfer(_feeCollector, feeAmount), "ERC20 Fee transfer failed");
             }
 
             emit Transfer(_beneficiary, transferAmount);
-            require(IERC20(_token).transfer(_beneficiary, transferAmount), "ERC20 transfer failed");
+            require(_token.transfer(_beneficiary, transferAmount), "ERC20 transfer failed");
         } else {
             _state = State.FAILED;
             emit Fail();
         }
     }
 
+    /**
+     * @dev Dilutes shares by allocating units to the fee collector, allowing for
+     * withdraws to occur as payouts progress
+     */
     function allocateFeePayout() private {
         if (_feeCollector == address(0) || _feePayoutBips == 0) {
             return;
@@ -243,6 +296,9 @@ contract ERC20CrowdFinancingV1 is Initializable {
         _depositTotal += feeAllocation;
     }
 
+    /**
+     * @dev Caclulates a fee to transfer to the fee collector upon processing
+     */
     function calculateUpfrontFee() private view returns (uint256) {
         if (_feeCollector == address(0) || _feeUpfrontBips == 0) {
             return 0;
@@ -262,16 +318,16 @@ contract ERC20CrowdFinancingV1 is Initializable {
     ///////////////////////////////////////////
 
     /**
-     * @dev Alternative means of paying out via approve + transferFrom
+     * @notice Alternative means of paying out via approve + transferFrom
      *
      * Emits a {Payout} event.
      */
     function makePayment() external {
         require(_state == State.FUNDED, "Cannot accept payment");
-        uint256 amount = IERC20(_token).allowance(msg.sender, address(this));
+        uint256 amount = _token.allowance(msg.sender, address(this));
         require(amount > 0, "Token allowance is 0");
         emit Payout(msg.sender, amount);
-        require(IERC20(_token).transferFrom(msg.sender, address(this), amount), "ERC20 transfer failed");
+        require(_token.transferFrom(msg.sender, address(this), amount), "ERC20 transfer failed");
     }
 
     /**
@@ -285,6 +341,8 @@ contract ERC20CrowdFinancingV1 is Initializable {
     }
 
     /**
+     * @param account the address of a depositor
+     *
      * @return The total tokens withdrawn for a given account
      */
     function withdrawsOf(address account) public view returns (uint256) {
@@ -298,12 +356,17 @@ contract ERC20CrowdFinancingV1 is Initializable {
         return state() == State.FUNDED || state() == State.FAILED;
     }
 
+    /**
+     * @dev We multiply by 1e18 to maximize precision. This can be slightly lossy since we
+     * cannot always have remainder free division.
+     */
     function payoutsMadeTo(address account) private view returns (uint256) {
-        // Multiply by 1e18 to maximize precision. Note, this can be slightly lossy
         return (_deposits[account] * 1e18 * payoutTotal()) / (_depositTotal * 1e18);
     }
 
     /**
+     * @param account the address of a depositor
+     *
      * @return The payout balance for the given account
      */
     function payoutBalance(address account) public view returns (uint256) {
@@ -311,7 +374,9 @@ contract ERC20CrowdFinancingV1 is Initializable {
     }
 
     /**
-     * @return The realzied profit for
+     * @param account the address of a depositor
+     *
+     * @return The realized profit for the given account. returns 0 if no profit
      */
     function returnOnInvestment(address account) public view returns (uint256) {
         uint256 _payout = payoutsMadeTo(account);
@@ -322,7 +387,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
     }
 
     /**
-     * Withdraw available funds to the sender, if withdraws are allowed, and
+     * @notice Withdraw available funds to the caller if withdraws are allowed and
      * the sender has a deposit balance (failed), or a payout balance (funded)
      *
      * Emits a {Withdraw} event.
@@ -338,14 +403,14 @@ contract ERC20CrowdFinancingV1 is Initializable {
     }
 
     /**
-     * @dev withdraw the initial deposit for hte given account
+     * @dev withdraw the initial deposit for the given account
      */
     function withdrawDeposit(address account) private {
         uint256 amount = _deposits[account];
         require(amount > 0, "No balance");
         _deposits[account] = 0;
         emit Withdraw(account, amount);
-        require(IERC20(_token).transfer(msg.sender, amount), "ERC20 transfer failed");
+        require(_token.transfer(msg.sender, amount), "ERC20 transfer failed");
     }
 
     /**
@@ -357,7 +422,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
         _withdraws[account] += amount;
         _withdrawTotal += amount;
         emit Withdraw(account, amount);
-        require(IERC20(_token).transfer(msg.sender, amount), "ERC20 transfer failed");
+        require(_token.transfer(msg.sender, amount), "ERC20 transfer failed");
     }
 
     ///////////////////////////////////////////
@@ -421,14 +486,14 @@ contract ERC20CrowdFinancingV1 is Initializable {
     }
 
     /**
-     * @return the address of the beneficiary
+     * @return the address of the token
      */
     function tokenAddress() public view returns (address) {
-        return _token;
+        return address(_token);
     }
 
     /**
-     * @return the address of the beneficiary
+     * @return the current token balance of the contract
      */
     function tokenBalance() public view returns (uint256) {
         return IERC20(_token).balanceOf(address(this));
@@ -442,7 +507,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
     }
 
     /**
-     * @return the maximum fund target for the round to be considered successful
+     * @return the maximum fund target
      */
     function maximumFundTarget() public view returns (uint256) {
         return _fundTargetMax;
