@@ -26,14 +26,17 @@ beacon_addr = deploy("FabricBeacon", ANVIL_PRIVATE_KEY, cfc_addr)
 # Now deploy the proxy, referencing the beacon, and passing the initialization params
 
 
-# address payable beneficiary,
-# uint256 fundTargetMin,
-# uint256 fundTargetMax,
-# uint256 minDeposit,
-# uint256 maxDeposit,
-# uint256 startTimestamp,
-# uint256 endTimestamp,
+# address payable beneficiary
+# uint256 fundTargetMin
+# uint256 fundTargetMax
+# uint256 minDeposit
+# uint256 maxDeposit
+# uint256 startTimestamp
+# uint256 endTimestamp
 # address tokenAddr
+# address feeCollectorAddr
+# uint256 upfrontFeeBips
+# uint256 payoutFeeBips
 cfc_params = [
   ['address', '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266'],
   ['uint256', 50_000],
@@ -42,7 +45,10 @@ cfc_params = [
   ['uint256', 100_000],
   ['uint256', Time.now.to_i],
   ['uint256', Time.now.to_i + 60 * 60],
-  ['address', token_addr]
+  ['address', token_addr],
+  ['address', '0x0000000000000000000000000000000000000000'],
+  ['uint256', 0],
+  ['uint256', 0],
 ]
 
 instance_addr = deploy("FabricProxy",  ANVIL_PRIVATE_KEY, beacon_addr, initialize_args(cfc_params))
