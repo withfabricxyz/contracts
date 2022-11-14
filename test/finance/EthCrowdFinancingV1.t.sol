@@ -3,21 +3,22 @@ pragma solidity ^0.8.17;
 
 import "@forge/Test.sol";
 import "@forge/console2.sol";
-import "src/finance/CrowdFinancingV1.sol";
+import "src/finance/EthCrowdFinancingV1.sol";
 
-contract CrowdFinancingV1Test is Test {
-    CrowdFinancingV1 internal campaign;
+contract EthCrowdFinancingV1Test is Test {
+    EthCrowdFinancingV1 internal campaign;
     uint256 internal expirationFuture = 70000;
     address payable internal beneficiary = payable(0xB4c79DAb8f259C7aeE6e5B2aa729821864227e83);
     address internal depositor = 0xb4c79DAB8f259c7Aee6E5b2aa729821864227E81;
     address internal depositor2 = 0xB4C79DAB8f259C7aEE6E5B2aa729821864227E8a;
     address internal depositor3 = 0xb4C79Dab8F259C7AEe6e5b2Aa729821864227e7A;
     address internal depositorEmpty = 0xC4C79dAB8F259C7Aee6e5B2aa729821864227e81;
+    address internal feeCollector = 0xC4c79dAb8F259c7AEE6e5b2aA729821864227E87;
 
-    function deposit(address _depositor, uint256 amount) public {
+    function deposit(EthCrowdFinancingV1 _campaign, address _depositor, uint256 amount) public {
         vm.startPrank(_depositor);
         (bool success, bytes memory data) =
-            address(campaign).call{value: amount, gas: 700000}(abi.encodeWithSignature("deposit()"));
+            address(_campaign).call{value: amount, gas: 700000}(abi.encodeWithSignature("deposit()"));
         vm.stopPrank();
 
         if (!success) {
@@ -28,12 +29,26 @@ contract CrowdFinancingV1Test is Test {
         }
     }
 
+    function deposit(address _depositor, uint256 amount) public {
+        deposit(campaign, _depositor, amount);
+    }
+
+    function withdraw(EthCrowdFinancingV1 _campaign, address _depositor) public {
+        vm.startPrank(_depositor);
+        _campaign.withdraw();
+        vm.stopPrank();
+    }
+
+    function fundAndTransferCampaign(EthCrowdFinancingV1 _campaign) public {
+        deposit(_campaign, depositor, 1e18);
+        deposit(_campaign, depositor2, 1e18);
+        deposit(_campaign, depositor3, 1e18);
+        vm.warp(_campaign.expiresAt());
+        _campaign.processFunds();
+    }
+
     function fundAndTransfer() public {
-        deposit(depositor, 1e18);
-        deposit(depositor2, 1e18);
-        deposit(depositor3, 1e18);
-        vm.warp(campaign.expiresAt());
-        campaign.processFunds();
+        fundAndTransferCampaign(campaign);
     }
 
     function fundAndFail() public {
@@ -44,22 +59,32 @@ contract CrowdFinancingV1Test is Test {
         campaign.processFunds();
     }
 
-    function yieldValue(uint256 amount) public {
+    function yieldValue(EthCrowdFinancingV1 _campaign, uint256 amount) public {
         vm.startPrank(beneficiary);
-        payable(address(campaign)).transfer(amount);
+        payable(address(_campaign)).transfer(amount);
         vm.stopPrank();
     }
 
+    function yieldValue(uint256 amount) public {
+        yieldValue(campaign, amount);
+    }
+
     function setUp() public {
-        campaign = new CrowdFinancingV1(
-        beneficiary,
-        2e18, // 2ETH
-        5e18, // 5ETH
-        2e17, // 0.2ETH
-        1e18,  // 1ETH
-        block.timestamp,
-        block.timestamp + expirationFuture
-      );
+        campaign = new EthCrowdFinancingV1();
+
+        vm.store(address(campaign), bytes32(uint256(0)), bytes32(0));
+        campaign.initialize(
+            beneficiary,
+            2e18, // 2ETH
+            5e18, // 5ETH
+            2e17, // 0.2ETH
+            1e18, // 1ETH
+            block.timestamp,
+            block.timestamp + expirationFuture,
+            address(0),
+            0,
+            0
+        );
 
         deal(depositor, 9e18);
         deal(depositor2, 9e18);
@@ -73,7 +98,6 @@ contract CrowdFinancingV1Test is Test {
         assertEq(0, campaign.depositTotal());
         assertEq(2e17, campaign.minimumDeposit());
         assertEq(1e18, campaign.maximumDeposit());
-
         assertEq(2e18, campaign.minimumFundTarget());
         assertEq(5e18, campaign.maximumFundTarget());
         assertEq(beneficiary, campaign.beneficiaryAddress());
@@ -158,7 +182,7 @@ contract CrowdFinancingV1Test is Test {
         vm.warp(campaign.expiresAt());
         assertFalse(campaign.withdrawAllowed());
         campaign.processFunds();
-        assertTrue(CrowdFinancingV1.State.FUNDED == campaign.state());
+        assertTrue(EthCrowdFinancingV1.State.FUNDED == campaign.state());
         assertEq(3e18, beneficiary.balance);
         assertEq(0, address(campaign).balance);
         assertTrue(campaign.withdrawAllowed());
@@ -200,7 +224,7 @@ contract CrowdFinancingV1Test is Test {
 
     function testFundingFailure() public {
         fundAndFail();
-        assertTrue(CrowdFinancingV1.State.FAILED == campaign.state());
+        assertTrue(EthCrowdFinancingV1.State.FAILED == campaign.state());
         assertTrue(campaign.withdrawAllowed());
         assertEq(0, beneficiary.balance);
 
@@ -256,5 +280,57 @@ contract CrowdFinancingV1Test is Test {
         fundAndFail();
         vm.expectRevert("Deposits are not allowed");
         deposit(depositor, 1e18);
+    }
+
+    ////////////
+    // Fee Collection Tests
+    ////////////
+
+    function createFeeCampaign(uint256 upfrontBips, uint256 payoutBips) internal returns (EthCrowdFinancingV1) {
+        EthCrowdFinancingV1 withFees = new EthCrowdFinancingV1();
+        // unmark initialized, eg: campaign._initialized = 0;
+        vm.store(address(withFees), bytes32(uint256(0)), bytes32(0));
+        withFees.initialize(
+            beneficiary,
+            2e18, // 2ETH
+            5e18, // 5ETH
+            2e17, // 0.2ETH
+            1e18, // 1ETH
+            block.timestamp,
+            block.timestamp + expirationFuture,
+            feeCollector,
+            upfrontBips,
+            payoutBips
+        );
+        return withFees;
+    }
+
+    function testUpfrontFees() public {
+        EthCrowdFinancingV1 _campaign = createFeeCampaign(100, 0);
+        fundAndTransferCampaign(_campaign);
+        assertEq(3e18 - 3e16, beneficiary.balance);
+        assertEq(3e16, feeCollector.balance);
+        assertEq(0, address(_campaign).balance);
+    }
+
+    function testUpfrontFeesSplit() public {
+        EthCrowdFinancingV1 _campaign = createFeeCampaign(5000, 0); // 50%!
+        fundAndTransferCampaign(_campaign);
+        assertEq(beneficiary.balance, 1.5e18);
+        assertEq(feeCollector.balance, 1.5e18);
+    }
+
+    function testPayoutFees() public {
+        EthCrowdFinancingV1 _campaign = createFeeCampaign(0, 250);
+        fundAndTransferCampaign(_campaign);
+        yieldValue(_campaign, 1e18);
+
+        withdraw(_campaign, depositor);
+        withdraw(_campaign, depositor2);
+        withdraw(_campaign, depositor3);
+        withdraw(_campaign, feeCollector);
+
+        assertApproxEqAbs(0, address(_campaign).balance, 4);
+        assertApproxEqAbs(25000000000000000, feeCollector.balance, 1e15);
     }
 }

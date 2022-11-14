@@ -2,36 +2,58 @@
 
 pragma solidity ^0.8.17;
 
+import "@openzeppelin-upgradeable/contracts/proxy/utils/Initializable.sol";
+
 /**
+ *
+ * @title Crowd Financing with Payback
+ * @author Dan Simpson
+ *
  * A minimal contract for accumulating funds from many accounts, transferring the balance
  * to a beneficiary, and allocating payouts to depositors as the beneficiary returns funds.
  *
- * The primary purpose of this contract is financing a trusted beneficiary, with the expectation of ROI.
+ * The primary purpose of this contract is financing a trusted beneficiary with the expectation of ROI.
  * If the fund target is met within the fund raising window, then processing the funds will transfer all
- * raised funds to the beneficiary, and change the state of the contract to allow for payouts to occur.
- *
- * Payouts are two things:
- * 1. Eth sent to the contract by the beneficiary as ROI
- * 2. Funding accounts withdrawing their balance of payout
+ * raised funds to the beneficiary, minus optional fee, and change the state of the contract to allow for payouts to occur.
  *
  * If the fund target is not met in the fund raise window, the raise fails, and all depositors can
  * withdraw their initial investment.
+ *
+ * Deposits:
+ * Accounts deposit eth by calling the deposit function with an amount of eth
+ *
+ * Payouts:
+ * The beneficiary makes payments by transfering eth to the contract
+ *
+ * As the payout balance accrues, depositors can invoke the withdraw function to transfer their
+ * payout balance.
+ *
+ * Fees:
+ * The contract can be initialized with an optional fee collector address with options for two
+ * kinds of fees, in basis points. A value of 250 would mean 2.5%.
+ *
+ * Type A Fee: Upon processing, a percentage of the total deposit amount is carved out and sent
+ * to the fee collector. The remaining balance is sent to the beneficiary.
+ * Type B Fee: Upon processing, the fee collector is added to the cap table as a depositor with a
+ * value commensurate with the fee, and the total deposits is also increased by that amount.
+ *
  */
-contract CrowdFinancingV1 {
-    // Emitted when an address deposits funds to the contract
-    event Deposit(address indexed account, uint256 weiAmount);
+contract EthCrowdFinancingV1 is Initializable {
+    /// @notice Emitted when an account deposits funds to the contract
+    event Deposit(address indexed account, uint256 amount);
 
-    // Emitted when an account withdraws their initial allocation or payouts
-    event Withdraw(address indexed account, uint256 weiAmount);
+    /// @notice Emitted when an account withdraws their initial deposit or payout balance
+    event Withdraw(address indexed account, uint256 amount);
 
-    // Emitted when the entirety of deposits is transferred to the beneficiary
-    event Transfer(address indexed account, uint256 weiAmount);
+    /// @notice Emitted when the funds are transferred to the beneficiary and when
+    /// fees are transferred to the fee collector, if specified
+    event Transfer(address indexed account, uint256 amount);
 
-    // Emitted when the targets are not met, and time has elapsed (calling processFunds)
+    /// @notice Emitted on processing if time has elapsed and the target was not met
     event Fail();
 
-    // Emitted when eth is transferred to the contract, for depositers to withdraw their share
-    event Payout(address indexed account, uint256 weiAmount);
+    /// @notice Emitted when makePayment is invoked by the beneficiary
+    event Payout(address indexed account, uint256 amount);
 
     enum State {
         FUNDING,
@@ -43,10 +65,10 @@ contract CrowdFinancingV1 {
     State private _state;
 
     // The address of the beneficiary
-    address payable private immutable _beneficiary;
+    address private _beneficiary;
 
     // The minimum fund target to meet. Once funds meet or exceed this value the
-    // contract will lock and funders will not be able to withdraw
+    // contract will transfer funds upon processing
     uint256 private _fundTargetMin;
 
     // The maximum fund target. If a transfer from a funder causes totalFunds to exceed
@@ -59,7 +81,7 @@ contract CrowdFinancingV1 {
     // The maximum wei an account can deposit
     uint256 private _maxDeposit;
 
-    // The expiration timestamp for the fund
+    // The starting timestamp for the fund
     uint256 private _startTimestamp;
 
     // The expiration timestamp for the fund
@@ -71,20 +93,57 @@ contract CrowdFinancingV1 {
     // The total amount withdrawn for all accounts
     uint256 private _withdrawTotal;
 
+    // The mapping from account to what that account has deposited
     mapping(address => uint256) private _deposits;
 
-    // If the campaign is successful, then we track withdraw
+    // The mapping from account to what that account has withdrawn
     mapping(address => uint256) private _withdraws;
 
-    constructor(
+    // Fee related items
+
+    // The optional address of the fee collector
+    address private _feeCollector;
+
+    // The fee in basis points, transferred to the fee collector when
+    // processing a successful raise
+    uint256 private _feeUpfrontBips;
+
+    // The fee in basis points, used to dilute the cap table when
+    // processing a succesful raise
+    uint256 private _feePayoutBips;
+
+    /// @notice This contract is intended for use with proxies, so we prevent direct
+    /// initialization. This contract will fail to function properly without a proxy
+    constructor() {
+        _disableInitializers();
+    }
+
+    /**
+     * @notice Initialize acts as the constructor, as this contract is intended to work with proxy contracts.
+     *
+     * @param beneficiary the address of the beneficiary, where funds are sent on success
+     * @param fundTargetMin the minimum funding amount acceptible for successful financing
+     * @param fundTargetMax the maximum funding amount accepted for the financing round
+     * @param minDeposit the minimum deposit an account can make in one deposit
+     * @param maxDeposit the maximum deposit an account can make in one or more deposits
+     * @param startTimestamp the UNIX time in seconds denoting when deposits can start
+     * @param endTimestamp the UNIX time in seconds denoting when deposits are no longer allowed
+     * @param feeCollector the address of the fee collector, or the 0 address if no fees are collected
+     * @param feeUpfrontBips the upfront fee in basis points, calculated during processing
+     * @param feePayoutBips the payout fee in basis points. Dilutes the cap table for fee collection
+     */
+    function initialize(
         address payable beneficiary,
         uint256 fundTargetMin,
         uint256 fundTargetMax,
         uint256 minDeposit,
         uint256 maxDeposit,
         uint256 startTimestamp,
-        uint256 endTimestamp
-    ) {
+        uint256 endTimestamp,
+        address feeCollector,
+        uint256 feeUpfrontBips,
+        uint256 feePayoutBips
+    ) public initializer {
         require(beneficiary != address(0), "Invalid beneficiary address");
         require(startTimestamp < endTimestamp, "Start must precede end");
         require(endTimestamp > block.timestamp && (endTimestamp - startTimestamp) < 7776000, "Invalid end time");
@@ -101,6 +160,10 @@ contract CrowdFinancingV1 {
         _startTimestamp = startTimestamp;
         _expirationTimestamp = endTimestamp;
 
+        _feeCollector = feeCollector;
+        _feeUpfrontBips = feeUpfrontBips;
+        _feePayoutBips = feePayoutBips;
+
         _depositTotal = 0;
         _withdrawTotal = 0;
         _state = State.FUNDING;
@@ -111,7 +174,7 @@ contract CrowdFinancingV1 {
     ///////////////////////////////////////////
 
     /**
-     * Deposit eth into the contract track the deposit for calculating payout.
+     * @notice Deposit wei into the contract and track amount for calculating payout.
      *
      * Emits a {Deposit} event if the target was not met
      *
@@ -124,8 +187,8 @@ contract CrowdFinancingV1 {
     function deposit() public payable {
         require(depositAllowed(), "Deposits are not allowed");
 
-        uint256 amount = msg.value;
         address account = msg.sender;
+        uint256 amount = msg.value;
         uint256 total = _deposits[account] + amount;
 
         require(total >= _minDeposit, "Deposit amount is too low");
@@ -133,7 +196,6 @@ contract CrowdFinancingV1 {
 
         _deposits[account] += amount;
         _depositTotal += amount;
-
         emit Deposit(account, amount);
     }
 
@@ -145,6 +207,17 @@ contract CrowdFinancingV1 {
     }
 
     /**
+     * @param account the address of a depositor
+     *
+     * @return the percentage of ownership represented as parts per million
+     */
+    function ownershipPPM(address account) public view returns (uint256) {
+        return (_deposits[account] * 1_000_000) / _depositTotal;
+    }
+
+    /**
+     * @param account the address of a depositor
+     *
      * @return the total amount of deposits for a given account
      */
     function depositAmount(address account) public view returns (uint256) {
@@ -152,7 +225,7 @@ contract CrowdFinancingV1 {
     }
 
     /**
-     * @return the total amount of deposits for all accounts
+     * @return the total deposit amount for all accounts
      */
     function depositTotal() public view returns (uint256) {
         return _depositTotal;
@@ -162,24 +235,62 @@ contract CrowdFinancingV1 {
     // Phase 2: Transfer or Fail
     ///////////////////////////////////////////
 
-    /*
-    * Transfer funds to the beneficiary and change the state
-    *
-    * Emits a {Transfer} event if the target was met and funds transfered
-    * Emits a {Fail} event if the target was not met
-    */
+    /**
+     * @notice Transfer funds to the beneficiary and change the state
+     *
+     * Emits a {Transfer} event if the target was met and funds transfered
+     * Emits a {Fail} event if the target was not met
+     */
     function processFunds() public {
         require(_state == State.FUNDING, "Funds already processed");
         require(expired(), "Raise window is not expired");
 
         if (fundTargetMet()) {
             _state = State.FUNDED;
-            emit Transfer(_beneficiary, _depositTotal);
-            _beneficiary.transfer(_depositTotal);
+
+            uint256 feeAmount = calculateUpfrontFee();
+            uint256 transferAmount = _depositTotal - feeAmount;
+
+            // This can mutate _depositTotal, so that withdraws don't over withdraw
+            allocateFeePayout();
+
+            // If any upfront fee is present, pay that out to the collector now, so the funds
+            // are not available for depositors to withdraw
+            if (feeAmount > 0) {
+                emit Transfer(_feeCollector, feeAmount);
+                payable(_feeCollector).transfer(feeAmount);
+            }
+
+            emit Transfer(_beneficiary, transferAmount);
+            payable(_beneficiary).transfer(transferAmount);
         } else {
             _state = State.FAILED;
             emit Fail();
         }
+    }
+
+    /**
+     * @dev Dilutes shares by allocating units to the fee collector, allowing for
+     * withdraws to occur as payouts progress
+     */
+    function allocateFeePayout() private {
+        if (_feeCollector == address(0) || _feePayoutBips == 0) {
+            return;
+        }
+        uint256 feeAllocation = (_depositTotal * _feePayoutBips) / (10_000);
+
+        _deposits[_feeCollector] = feeAllocation;
+        _depositTotal += feeAllocation;
+    }
+
+    /**
+     * @dev Caclulates a fee to transfer to the fee collector upon processing
+     */
+    function calculateUpfrontFee() private view returns (uint256) {
+        if (_feeCollector == address(0) || _feeUpfrontBips == 0) {
+            return 0;
+        }
+        return (_depositTotal * _feeUpfrontBips) / (10_000);
     }
 
     /**
@@ -194,7 +305,7 @@ contract CrowdFinancingV1 {
     ///////////////////////////////////////////
 
     /**
-     * @dev Only allow transfers once funded
+     * @notice Receives eth to distribute to depositors pro rata
      *
      * Emits a {Payout} event.
      */
@@ -214,6 +325,8 @@ contract CrowdFinancingV1 {
     }
 
     /**
+     * @param account the address of a depositor
+     *
      * @return The total wei withdrawn for a given account
      */
     function withdrawsOf(address account) public view returns (uint256) {
@@ -228,16 +341,37 @@ contract CrowdFinancingV1 {
     }
 
     /**
-     * @return The payout balance for the given account
+     * @dev We multiply by 1e18 to maximize precision. This can be slightly lossy since we
+     * cannot always have remainder free division.
      */
-    function payoutBalance(address account) public view returns (uint256) {
-        // Multiply by 1e18 to maximize precision. Note, this can be slightly lossy (1 WEI)
-        uint256 depositPayoutTotal = (_deposits[account] * 1e18 * payoutTotal()) / (_depositTotal * 1e18);
-        return depositPayoutTotal - withdrawsOf(account);
+    function payoutsMadeTo(address account) private view returns (uint256) {
+        return (_deposits[account] * 1e18 * payoutTotal()) / (_depositTotal * 1e18);
     }
 
     /**
-     * Withdraw available funds to the sender, if withdraws are allowed, and
+     * @param account the address of a depositor
+     *
+     * @return The payout balance for the given account
+     */
+    function payoutBalance(address account) public view returns (uint256) {
+        return payoutsMadeTo(account) - withdrawsOf(account);
+    }
+
+    /**
+     * @param account the address of a depositor
+     *
+     * @return The realized profit for the given account. returns 0 if no profit
+     */
+    function returnOnInvestment(address account) public view returns (uint256) {
+        uint256 _payout = payoutsMadeTo(account);
+        if (_payout <= _deposits[account]) {
+            return 0;
+        }
+        return _payout - _deposits[account];
+    }
+
+    /**
+     * @notice Withdraw available funds to the caller if withdraws are allowed and
      * the sender has a deposit balance (failed), or a payout balance (funded)
      *
      * Emits a {Withdraw} event.
@@ -253,7 +387,7 @@ contract CrowdFinancingV1 {
     }
 
     /**
-     * @dev withdraw the initial deposit for hte given account
+     * @dev withdraw the initial deposit for the given account
      */
     function withdrawDeposit(address account) private {
         uint256 amount = _deposits[account];
@@ -343,7 +477,7 @@ contract CrowdFinancingV1 {
     }
 
     /**
-     * @return the maximum fund target for the round to be considered successful
+     * @return the maximum fund target
      */
     function maximumFundTarget() public view returns (uint256) {
         return _fundTargetMax;
