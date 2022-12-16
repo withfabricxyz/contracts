@@ -301,7 +301,7 @@ contract EthCrowdFinancingV1 is Initializable {
         }
         uint256 feeAllocation = (_depositTotal * _feePayoutBips) / (10_000);
 
-        _deposits[_feeCollector] = feeAllocation;
+        _deposits[_feeCollector] += feeAllocation;
         _depositTotal += feeAllocation;
     }
 
