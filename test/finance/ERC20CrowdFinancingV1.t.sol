@@ -27,7 +27,7 @@ contract ERC20CrowdFinancingV1Test is Test {
     function deposit(ERC20CrowdFinancingV1 _campaign, address _depositor, uint256 amount) public {
         vm.startPrank(_depositor);
         token.approve(address(_campaign), amount);
-        _campaign.deposit();
+        _campaign.deposit(amount);
         vm.stopPrank();
     }
 
@@ -167,7 +167,7 @@ contract ERC20CrowdFinancingV1Test is Test {
     function testUnapprovedDeposit() public {
         vm.expectRevert("Deposit amount is too low");
         vm.startPrank(depositor);
-        campaign.deposit();
+        campaign.deposit(0);
     }
 
     function testDeposit() public {
@@ -182,14 +182,21 @@ contract ERC20CrowdFinancingV1Test is Test {
         vm.startPrank(depositor);
         token.approve(address(campaign), 6e18);
         vm.expectRevert("Deposit amount is too high");
-        campaign.deposit();
+        campaign.deposit(6e18);
     }
 
     function testSmallDeposit() public {
         vm.startPrank(depositor);
         token.approve(address(campaign), 1e12);
         vm.expectRevert("Deposit amount is too low");
-        campaign.deposit();
+        campaign.deposit(1e12);
+    }
+
+    function testAllowanceMismatch() public {
+        vm.startPrank(depositor);
+        token.approve(address(campaign), 1e12);
+        vm.expectRevert("Deposit amount exeeds token allowance");
+        campaign.deposit(1e18);
     }
 
     function testManyDeposits() public {
@@ -201,7 +208,7 @@ contract ERC20CrowdFinancingV1Test is Test {
         vm.startPrank(depositor);
         token.approve(address(campaign), 1e12);
         vm.expectRevert("Deposit amount is too high");
-        campaign.deposit();
+        campaign.deposit(1e12);
     }
 
     function testManyDepositsFromMany() public {
@@ -218,7 +225,7 @@ contract ERC20CrowdFinancingV1Test is Test {
     function testDepositWithNoBalance() public {
         vm.startPrank(depositorEmpty);
         vm.expectRevert("Deposit amount is too low");
-        campaign.deposit();
+        campaign.deposit(0);
     }
 
     function testFundsTransfer() public {
@@ -279,16 +286,19 @@ contract ERC20CrowdFinancingV1Test is Test {
 
     function testReturnsViaPayoutFn() public {
         vm.expectRevert("Cannot accept payment");
-        campaign.makePayment();
+        campaign.makePayment(1e18);
 
         fundAndTransfer();
         assertEq(0, balanceOf(address(campaign)));
         vm.startPrank(beneficiary);
         token.approve(address(campaign), 1e18);
-        campaign.makePayment();
+        campaign.makePayment(1e18);
 
-        vm.expectRevert("Token allowance is 0");
-        campaign.makePayment();
+        vm.expectRevert("Amount is 0");
+        campaign.makePayment(0);
+
+        vm.expectRevert("Payment amount exeeds token allowance");
+        campaign.makePayment(1e18);
 
         vm.stopPrank();
         assertEq(1e18, balanceOf(address(campaign)));
@@ -343,14 +353,14 @@ contract ERC20CrowdFinancingV1Test is Test {
         fundAndTransfer();
         vm.startPrank(depositor);
         vm.expectRevert("Deposits are not allowed");
-        campaign.deposit();
+        campaign.deposit(1e18);
     }
 
     function testDepositAfterFailed() public {
         fundAndFail();
         vm.startPrank(depositor);
         vm.expectRevert("Deposits are not allowed");
-        campaign.deposit();
+        campaign.deposit(1e18);
     }
 
     ////////////

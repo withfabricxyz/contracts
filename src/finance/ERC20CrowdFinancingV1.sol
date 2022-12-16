@@ -187,19 +187,25 @@ contract ERC20CrowdFinancingV1 is Initializable {
     /**
      * @notice Deposit tokens into the contract and track amount for calculating payout.
      *
+     * @param amount the amount of tokens to deposit
+     *
      * Emits a {Deposit} event if the target was not met
      *
      * Requirements:
      *
-     * - `msg.value` must be >= minimum fund amount and <= maximum fund amount
+     * - `amount` must be >= minimum deposit amount and <= maximum deposit amount
      * - deposit total must not exceed max fund target
      * - state must equal FUNDING
+     * - `amount` must be <= token allowance for the contract
      */
-    function deposit() public {
+    function deposit(uint256 amount) public {
         require(depositAllowed(), "Deposits are not allowed");
 
         address account = msg.sender;
-        uint256 amount = _token.allowance(account, address(this));
+        uint256 allowed = _token.allowance(account, address(this));
+
+        require(amount <= allowed, "Deposit amount exeeds token allowance");
+
         uint256 total = _deposits[account] + amount;
 
         require(total >= _minDeposit, "Deposit amount is too low");
@@ -320,12 +326,17 @@ contract ERC20CrowdFinancingV1 is Initializable {
     /**
      * @notice Alternative means of paying out via approve + transferFrom
      *
+     * @param amount the amount of tokens to payout
+     *
      * Emits a {Payout} event.
      */
-    function makePayment() external {
+    function makePayment(uint256 amount) external {
         require(_state == State.FUNDED, "Cannot accept payment");
-        uint256 amount = _token.allowance(msg.sender, address(this));
-        require(amount > 0, "Token allowance is 0");
+        require(amount > 0, "Amount is 0");
+
+        uint256 allowed = _token.allowance(msg.sender, address(this));
+        require(amount <= allowed, "Payment amount exeeds token allowance");
+
         emit Payout(msg.sender, amount);
         require(_token.transferFrom(msg.sender, address(this), amount), "ERC20 transfer failed");
     }
