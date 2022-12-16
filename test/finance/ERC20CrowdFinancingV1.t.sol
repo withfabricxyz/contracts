@@ -396,10 +396,10 @@ contract ERC20CrowdFinancingV1Test is Test {
     }
 
     function testUpfrontFeesSplit() public {
-        ERC20CrowdFinancingV1 _campaign = createFeeCampaign(5000, 0); // 50%!
+        ERC20CrowdFinancingV1 _campaign = createFeeCampaign(2500, 0); // 25%!
         fundAndTransferCampaign(_campaign);
-        assertEq(balanceOf(beneficiary), 1.5e18);
-        assertEq(balanceOf(feeCollector), 1.5e18);
+        assertEq(balanceOf(beneficiary), 2.25e18);
+        assertEq(balanceOf(feeCollector), 0.75e18);
     }
 
     function testPayoutFees() public {
@@ -414,5 +414,40 @@ contract ERC20CrowdFinancingV1Test is Test {
 
         assertApproxEqAbs(0, balanceOf(address(_campaign)), 4);
         assertApproxEqAbs(25000000000000000, balanceOf(feeCollector), 1e15);
+    }
+
+    function testInvalidFeeConfig() public {
+        ERC20CrowdFinancingV1 withFees = new ERC20CrowdFinancingV1();
+        // unmark initialized, eg: campaign._initialized = 0;
+        vm.store(address(withFees), bytes32(uint256(0)), bytes32(0));
+        vm.expectRevert("Fees must be 0 when there is no fee collector");
+        withFees.initialize(
+            beneficiary,
+            2e18, // 2ETH
+            5e18, // 5ETH
+            2e17, // 0.2ETH
+            1e18, // 1ETH
+            block.timestamp,
+            block.timestamp + expirationFuture,
+            address(token),
+            address(0),
+            100,
+            0
+        );
+
+        vm.expectRevert("Fees required when fee collector is present");
+        withFees.initialize(
+            beneficiary,
+            2e18, // 2ETH
+            5e18, // 5ETH
+            2e17, // 0.2ETH
+            1e18, // 1ETH
+            block.timestamp,
+            block.timestamp + expirationFuture,
+            address(token),
+            feeCollector,
+            0,
+            0
+        );
     }
 }

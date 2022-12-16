@@ -39,6 +39,18 @@ import "@openzeppelin-upgradeable/contracts/proxy/utils/Initializable.sol";
  *
  */
 contract EthCrowdFinancingV1 is Initializable {
+    // Max campaign duration: 90 Days
+    uint private constant MAX_DURATION_SECONDS = 7776000;
+
+    // Min campaign duration: 30 minutes
+    uint private constant MIN_DURATION_SECONDS = 1800;
+
+    // Allow a campaign to be deployed where the start time is up to one minute in the past
+    uint private constant PAST_START_TOLERANCE_SECONDS = 60;
+
+    // Maximum fee basis points
+    uint private constant MAX_FEE_BIPS = 2500;
+
     /// @notice Emitted when an account deposits funds to the contract
     event Deposit(address indexed account, uint256 amount);
 
@@ -145,12 +157,22 @@ contract EthCrowdFinancingV1 is Initializable {
         uint256 feePayoutBips
     ) public initializer {
         require(beneficiary != address(0), "Invalid beneficiary address");
-        require(startTimestamp < endTimestamp, "Start must precede end");
-        require(endTimestamp > block.timestamp && (endTimestamp - startTimestamp) < 7776000, "Invalid end time");
+        require(startTimestamp + PAST_START_TOLERANCE_SECONDS >= block.timestamp, "Invalid start time");
+        require(startTimestamp + MIN_DURATION_SECONDS <= endTimestamp, "Invalid time range");
+        require(endTimestamp > block.timestamp && (endTimestamp - startTimestamp) < MAX_DURATION_SECONDS, "Invalid end time");
         require(fundTargetMin > 0, "Min target must be >= 0");
         require(fundTargetMin <= fundTargetMax, "Min target must be <= Max");
+        require(minDeposit > 0, "Min deposit must be > 0");
         require(minDeposit <= maxDeposit, "Min deposit must be <= Max");
         require(minDeposit <= fundTargetMax, "Min deposit must be <= Target Max");
+        require(feeUpfrontBips <= MAX_FEE_BIPS, "Upfront fee too high");
+        require(feePayoutBips <= MAX_FEE_BIPS, "Payout fee too high");
+
+        if (feeCollector != address(0)) {
+            require(feeUpfrontBips > 0 || feePayoutBips > 0, "Fees required when fee collector is present");
+        } else {
+            require(feeUpfrontBips == 0 && feePayoutBips == 0, "Fees must be 0 when there is no fee collector");
+        }
 
         _beneficiary = beneficiary;
         _fundTargetMin = fundTargetMin;

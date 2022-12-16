@@ -314,10 +314,10 @@ contract EthCrowdFinancingV1Test is Test {
     }
 
     function testUpfrontFeesSplit() public {
-        EthCrowdFinancingV1 _campaign = createFeeCampaign(5000, 0); // 50%!
+        EthCrowdFinancingV1 _campaign = createFeeCampaign(2500, 0); // 25%!
         fundAndTransferCampaign(_campaign);
-        assertEq(beneficiary.balance, 1.5e18);
-        assertEq(feeCollector.balance, 1.5e18);
+        assertEq(beneficiary.balance, 2.25e18);
+        assertEq(feeCollector.balance, 0.75e18);
     }
 
     function testPayoutFees() public {
@@ -332,5 +332,38 @@ contract EthCrowdFinancingV1Test is Test {
 
         assertApproxEqAbs(0, address(_campaign).balance, 4);
         assertApproxEqAbs(25000000000000000, feeCollector.balance, 1e15);
+    }
+
+    function testInvalidFeeConfig() public {
+        EthCrowdFinancingV1 withFees = new EthCrowdFinancingV1();
+        // unmark initialized, eg: campaign._initialized = 0;
+        vm.store(address(withFees), bytes32(uint256(0)), bytes32(0));
+        vm.expectRevert("Fees must be 0 when there is no fee collector");
+        withFees.initialize(
+            beneficiary,
+            2e18, // 2ETH
+            5e18, // 5ETH
+            2e17, // 0.2ETH
+            1e18, // 1ETH
+            block.timestamp,
+            block.timestamp + expirationFuture,
+            address(0),
+            100,
+            0
+        );
+
+        vm.expectRevert("Fees required when fee collector is present");
+        withFees.initialize(
+            beneficiary,
+            2e18, // 2ETH
+            5e18, // 5ETH
+            2e17, // 0.2ETH
+            1e18, // 1ETH
+            block.timestamp,
+            block.timestamp + expirationFuture,
+            feeCollector,
+            0,
+            0
+        );
     }
 }
