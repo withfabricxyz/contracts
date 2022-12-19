@@ -364,11 +364,10 @@ contract EthCrowdFinancingV1 is Initializable {
     }
 
     /**
-     * @dev We multiply by 1e18 to maximize precision. This can be slightly lossy since we
-     * cannot always have remainder free division.
+     * @return The total amount of wei paid back to a given depositor
      */
     function payoutsMadeTo(address account) private view returns (uint256) {
-        return (_deposits[account] * 1e18 * payoutTotal()) / (_depositTotal * 1e18);
+        return (_deposits[account] * payoutTotal()) / _depositTotal;
     }
 
     /**

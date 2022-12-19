@@ -276,6 +276,19 @@ contract ERC20CrowdFinancingV1Test is Test {
         assertEq(0, campaign.payoutBalance(depositorEmpty));
     }
 
+    function testMultiReturns() public {
+        fundAndTransfer();
+        yieldValue(1e18);
+
+        uint256 dBalance = balanceOf(depositor);
+        withdraw(campaign, depositor);
+        yieldValue(1e18);
+        withdraw(campaign, depositor);
+
+        assertEq(666666666666666666, balanceOf(depositor) - dBalance);
+        assertEq(0, campaign.payoutBalance(depositor));
+    }
+
     function testProfit() public {
         fundAndTransfer();
         dealTokens(beneficiary, 1e20);

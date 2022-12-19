@@ -222,6 +222,19 @@ contract EthCrowdFinancingV1Test is Test {
         assertEq(0, campaign.payoutBalance(depositorEmpty));
     }
 
+    function testMultiReturns() public {
+        fundAndTransfer();
+        yieldValue(1e18);
+
+        uint256 dBalance = depositor.balance;
+        withdraw(campaign, depositor);
+        yieldValue(1e18);
+        withdraw(campaign, depositor);
+
+        assertEq(666666666666666666, depositor.balance - dBalance);
+        assertEq(0, campaign.payoutBalance(depositor));
+    }
+
     function testFundingFailure() public {
         fundAndFail();
         assertTrue(EthCrowdFinancingV1.State.FAILED == campaign.state());
