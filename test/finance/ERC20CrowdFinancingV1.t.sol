@@ -61,7 +61,8 @@ contract ERC20CrowdFinancingV1Test is Test {
 
     function yieldValue(ERC20CrowdFinancingV1 _campaign, uint256 amount) public {
         vm.startPrank(beneficiary);
-        token.transfer(address(_campaign), amount);
+        token.approve(address(_campaign), amount);
+        _campaign.makePayment(amount);
         vm.stopPrank();
     }
 

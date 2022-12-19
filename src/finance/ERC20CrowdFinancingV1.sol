@@ -26,7 +26,7 @@ import "@openzeppelin-upgradeable/contracts/proxy/utils/Initializable.sol";
  * are satisfied.
  *
  * Payouts:
- * The beneficiary makes payments by transfering tokens to the contract, or invoking the makePayment
+ * The beneficiary makes payments by invoking the makePayment
  * function which works similar to the deposit function.
  *
  * As the payout balance accrues, depositors can invoke the withdraw function to transfer their
@@ -130,6 +130,9 @@ contract ERC20CrowdFinancingV1 is Initializable {
     // The fee in basis points, used to dilute the cap table when
     // processing a succesful raise
     uint256 private _feePayoutBips;
+
+    // Track the number of tokens sent via makePayment
+    uint256 private _payoutTotal;
 
     /// @notice This contract is intended for use with proxies, so we prevent direct
     /// initialization. This contract will fail to function properly without a proxy
@@ -347,7 +350,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
     ///////////////////////////////////////////
 
     /**
-     * @notice Alternative means of paying out via approve + transferFrom
+     * @notice The only way to make payments to depositors
      *
      * @param amount the amount of tokens to payout
      *
@@ -361,6 +364,8 @@ contract ERC20CrowdFinancingV1 is Initializable {
         require(amount <= allowed, "Payment amount exeeds token allowance");
 
         emit Payout(msg.sender, amount);
+        _payoutTotal += amount;
+
         require(_token.transferFrom(msg.sender, address(this), amount), "ERC20 transfer failed");
     }
 
@@ -368,10 +373,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
      * @return The total amount of tokens paid back by the beneficiary
      */
     function payoutTotal() public view returns (uint256) {
-        if (state() != State.FUNDED) {
-            return 0;
-        }
-        return tokenBalance() + _withdrawTotal;
+        return _payoutTotal;
     }
 
     /**
