@@ -165,6 +165,7 @@ contract EthCrowdFinancingV1 is Initializable {
         require(minDeposit > 0, "Min deposit must be > 0");
         require(minDeposit <= maxDeposit, "Min deposit must be <= Max");
         require(minDeposit <= fundTargetMax, "Min deposit must be <= Target Max");
+        require(minDeposit < (fundTargetMax - fundTargetMin), "Min deposit must be < (fundTargetMax - fundTargetMin)");
         require(feeUpfrontBips <= MAX_FEE_BIPS, "Upfront fee too high");
         require(feePayoutBips <= MAX_FEE_BIPS, "Payout fee too high");
 
