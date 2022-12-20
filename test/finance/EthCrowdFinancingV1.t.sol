@@ -12,6 +12,8 @@ contract EthCrowdFinancingV1Test is Test {
     address internal depositor = 0xb4c79DAB8f259c7Aee6E5b2aa729821864227E81;
     address internal depositor2 = 0xB4C79DAB8f259C7aEE6E5B2aa729821864227E8a;
     address internal depositor3 = 0xb4C79Dab8F259C7AEe6e5b2Aa729821864227e7A;
+    address internal depositor4 = 0xB4c79DAB8f259C7AEE6e5B2Aa729821764227E8A;
+    address internal depositor5 = 0xB4C79DAB8f259c7Aee6E5b2AA729821764227e7A;
     address internal depositorEmpty = 0xC4C79dAB8F259C7Aee6e5B2aa729821864227e81;
     address internal feeCollector = 0xC4c79dAb8F259c7AEE6e5b2aA729821864227E87;
 
@@ -89,6 +91,8 @@ contract EthCrowdFinancingV1Test is Test {
         deal(depositor, 9e18);
         deal(depositor2, 9e18);
         deal(depositor3, 9e18);
+        deal(depositor4, 9e18);
+        deal(depositor5, 9e18);
     }
 
     function testInitialDeployment() public {
@@ -193,8 +197,17 @@ contract EthCrowdFinancingV1Test is Test {
         deposit(depositor2, 1e18);
         deposit(depositor3, 1e18);
         assertTrue(campaign.fundTargetMet());
-        vm.expectRevert("Raise window is not expired");
+        assertFalse(campaign.fundTargetMaxMet());
+        assertFalse(campaign.expired());
+        vm.expectRevert("More time/funds required");
         campaign.processFunds();
+        deposit(depositor4, 1e18);
+        deposit(depositor5, 1e18);
+        assertTrue(campaign.fundTargetMaxMet());
+        assertFalse(campaign.expired());
+        campaign.processFunds();
+        assertTrue(EthCrowdFinancingV1.State.FUNDED == campaign.state());
+        assertTrue(campaign.withdrawAllowed());
     }
 
     function testSecondProcess() public {

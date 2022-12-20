@@ -248,7 +248,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
      * @return true if deposits are allowed
      */
     function depositAllowed() public view returns (bool) {
-        return _depositTotal < _fundTargetMax && _state == State.FUNDING && started() && !expired();
+        return _state == State.FUNDING && !fundTargetMaxMet() &&  started() && !expired();
     }
 
     /**
@@ -288,7 +288,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
      */
     function processFunds() public {
         require(_state == State.FUNDING, "Funds already processed");
-        require(expired(), "Raise window is not expired");
+        require(expired() || fundTargetMaxMet(), "More time/funds required");
 
         if (fundTargetMet()) {
             _state = State.FUNDED;
@@ -343,6 +343,13 @@ contract ERC20CrowdFinancingV1 is Initializable {
      */
     function fundTargetMet() public view returns (bool) {
         return _depositTotal >= _fundTargetMin;
+    }
+
+    /**
+     * @return true if the maxmimum fund target is met
+     */
+    function fundTargetMaxMet() public view returns (bool) {
+        return _depositTotal >= _fundTargetMax;
     }
 
     ///////////////////////////////////////////
