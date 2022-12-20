@@ -181,7 +181,7 @@ contract ERC20CrowdFinancingV1Test is Test {
         deposit(depositor, 1e18);
         assertEq(1e18, campaign.tokenBalance());
         assertEq(1e18, campaign.depositTotal());
-        assertEq(1e18, campaign.depositAmount(depositor));
+        assertEq(1e18, campaign.depositedAmount(depositor));
         assertEq(0, campaign.payoutTotal());
     }
 
@@ -210,7 +210,7 @@ contract ERC20CrowdFinancingV1Test is Test {
         deposit(depositor, 9e17);
         deposit(depositor, 1e17);
         assertEq(1e18, campaign.depositTotal());
-        assertEq(1e18, campaign.depositAmount(depositor));
+        assertEq(1e18, campaign.depositedAmount(depositor));
 
         vm.startPrank(depositor);
         token.approve(address(campaign), 1e12);
@@ -442,7 +442,7 @@ contract ERC20CrowdFinancingV1Test is Test {
         withdraw(_campaign, feeCollector);
 
         assertApproxEqAbs(0, balanceOf(address(_campaign)), 4);
-        assertApproxEqAbs(25000000000000000, balanceOf(feeCollector), 1e15);
+        assertApproxEqAbs(24390243902439024, balanceOf(feeCollector), 5);
     }
 
     function testInvalidFeeConfig() public {

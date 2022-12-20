@@ -13,21 +13,27 @@ import "@openzeppelin-upgradeable/contracts/proxy/utils/Initializable.sol";
  * A minimal contract for accumulating funds from many accounts, transferring the balance
  * to a beneficiary, and allocating payouts to depositors as the beneficiary returns funds.
  *
- * The primary purpose of this contract is financing a trusted beneficiary with the expectation of ROI.
+ * The primary purpose of this contract is financing a trusted beneficiary with the possibility of ROI.
  * If the fund target is met within the fund raising window, then processing the funds will transfer all
  * raised funds to the beneficiary, minus optional fee, and change the state of the contract to allow for payouts to occur.
  *
  * If the fund target is not met in the fund raise window, the raise fails, and all depositors can
  * withdraw their initial investment.
  *
+ * Timing and processing:
+ * Processing can only occur after the fund raise window expires OR the fund target max is met.
+ *
+ * The minimum campaign duration is 30 minutes, and the max duration is 90 days. The window is reasonable
+ * for many scenarios, and if more time is required, many campaigns can be created in sequence. Locking
+ * funds beyond 90 days seems unecessary and risky.
+ *
  * Deposits:
  * Accounts deposit tokens by first creating an allowance in the token contract, and then
- * calling the deposit function, which will transfer the entire allowance if all contraints
+ * calling the deposit function, which will transfer the entire allowance if all constraints
  * are satisfied.
  *
  * Payouts:
- * The beneficiary makes payments by invoking the makePayment
- * function which works similar to the deposit function.
+ * The beneficiary makes payments by invoking the makePayment function which works similar to the deposit function.
  *
  * As the payout balance accrues, depositors can invoke the withdraw function to transfer their
  * payout balance.
@@ -44,16 +50,19 @@ import "@openzeppelin-upgradeable/contracts/proxy/utils/Initializable.sol";
  */
 contract ERC20CrowdFinancingV1 is Initializable {
     // Max campaign duration: 90 Days
-    uint private constant MAX_DURATION_SECONDS = 7776000;
+    uint256 private constant MAX_DURATION_SECONDS = 7776000;
 
     // Min campaign duration: 30 minutes
-    uint private constant MIN_DURATION_SECONDS = 1800;
+    uint256 private constant MIN_DURATION_SECONDS = 1800;
 
     // Allow a campaign to be deployed where the start time is up to one minute in the past
-    uint private constant PAST_START_TOLERANCE_SECONDS = 60;
+    uint256 private constant PAST_START_TOLERANCE_SECONDS = 60;
 
     // Maximum fee basis points
-    uint private constant MAX_FEE_BIPS = 2500;
+    uint256 private constant MAX_FEE_BIPS = 2500;
+
+    // Maximum basis points
+    uint256 private constant MAX_BIPS = 10_000;
 
     /// @notice Emitted when an account deposits funds to the contract
     event Deposit(address indexed account, uint256 numTokens);
@@ -156,7 +165,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
      * @param feePayoutBips the payout fee in basis points. Dilutes the cap table for fee collection
      */
     function initialize(
-        address payable beneficiary,
+        address beneficiary,
         uint256 fundTargetMin,
         uint256 fundTargetMax,
         uint256 minDeposit,
@@ -167,13 +176,15 @@ contract ERC20CrowdFinancingV1 is Initializable {
         address feeCollector,
         uint256 feeUpfrontBips,
         uint256 feePayoutBips
-    ) public initializer {
+    ) external initializer {
         require(beneficiary != address(0), "Invalid beneficiary address");
         require(tokenAddr != address(0), "Invalid token address");
         require(startTimestamp + PAST_START_TOLERANCE_SECONDS >= block.timestamp, "Invalid start time");
         require(startTimestamp + MIN_DURATION_SECONDS <= endTimestamp, "Invalid time range");
-        require(endTimestamp > block.timestamp && (endTimestamp - startTimestamp) < MAX_DURATION_SECONDS, "Invalid end time");
-        require(fundTargetMin > 0, "Min target must be >= 0");
+        require(
+            endTimestamp > block.timestamp && (endTimestamp - startTimestamp) < MAX_DURATION_SECONDS, "Invalid end time"
+        );
+        require(fundTargetMin > 0, "Min target must be > 0");
         require(fundTargetMin <= fundTargetMax, "Min target must be <= Max");
         require(minDeposit > 0, "Min deposit must be > 0");
         require(minDeposit <= maxDeposit, "Min deposit must be <= Max");
@@ -224,7 +235,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
      * - state must equal FUNDING
      * - `amount` must be <= token allowance for the contract
      */
-    function deposit(uint256 amount) public {
+    function deposit(uint256 amount) external {
         require(depositAllowed(), "Deposits are not allowed");
 
         address account = msg.sender;
@@ -248,7 +259,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
      * @return true if deposits are allowed
      */
     function depositAllowed() public view returns (bool) {
-        return _state == State.FUNDING && !fundTargetMaxMet() &&  started() && !expired();
+        return _state == State.FUNDING && !fundTargetMaxMet() && started() && !expired();
     }
 
     /**
@@ -256,7 +267,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
      *
      * @return the percentage of ownership represented as parts per million
      */
-    function ownershipPPM(address account) public view returns (uint256) {
+    function ownershipPPM(address account) external view returns (uint256) {
         return (_deposits[account] * 1_000_000) / _depositTotal;
     }
 
@@ -265,14 +276,14 @@ contract ERC20CrowdFinancingV1 is Initializable {
      *
      * @return the total amount of deposits for a given account
      */
-    function depositAmount(address account) public view returns (uint256) {
+    function depositedAmount(address account) external view returns (uint256) {
         return _deposits[account];
     }
 
     /**
      * @return the total deposit amount for all accounts
      */
-    function depositTotal() public view returns (uint256) {
+    function depositTotal() external view returns (uint256) {
         return _depositTotal;
     }
 
@@ -283,10 +294,10 @@ contract ERC20CrowdFinancingV1 is Initializable {
     /**
      * @notice Transfer funds to the beneficiary and change the state
      *
-     * Emits a {Transfer} event if the target was met and funds transfered
+     * Emits a {Transfer} event if the target was met and funds transferred
      * Emits a {Fail} event if the target was not met
      */
-    function processFunds() public {
+    function processFunds() external {
         require(_state == State.FUNDING, "Funds already processed");
         require(expired() || fundTargetMaxMet(), "More time/funds required");
 
@@ -318,14 +329,16 @@ contract ERC20CrowdFinancingV1 is Initializable {
      * @dev Dilutes shares by allocating units to the fee collector, allowing for
      * withdraws to occur as payouts progress
      */
-    function allocateFeePayout() private {
+    function allocateFeePayout() private returns (uint256) {
         if (_feeCollector == address(0) || _feePayoutBips == 0) {
-            return;
+            return 0;
         }
-        uint256 feeAllocation = (_depositTotal * _feePayoutBips) / (10_000);
+        uint256 feeAllocation = (_depositTotal * _feePayoutBips) / (MAX_BIPS);
 
         _deposits[_feeCollector] += feeAllocation;
         _depositTotal += feeAllocation;
+
+        return feeAllocation;
     }
 
     /**
@@ -335,7 +348,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
         if (_feeCollector == address(0) || _feeUpfrontBips == 0) {
             return 0;
         }
-        return (_depositTotal * _feeUpfrontBips) / (10_000);
+        return (_depositTotal * _feeUpfrontBips) / (MAX_BIPS);
     }
 
     /**
@@ -434,7 +447,7 @@ contract ERC20CrowdFinancingV1 is Initializable {
      *
      * Emits a {Withdraw} event.
      */
-    function withdraw() public {
+    function withdraw() external {
         require(withdrawAllowed(), "Withdraw not allowed");
         address account = msg.sender;
         if (state() == State.FUNDED) {
@@ -481,21 +494,21 @@ contract ERC20CrowdFinancingV1 is Initializable {
     /**
      * @return the minimum deposit in tokens
      */
-    function minimumDeposit() public view returns (uint256) {
+    function minimumDeposit() external view returns (uint256) {
         return _minDeposit;
     }
 
     /**
      * @return the maximum deposit in tokens
      */
-    function maximumDeposit() public view returns (uint256) {
+    function maximumDeposit() external view returns (uint256) {
         return _maxDeposit;
     }
 
     /**
      * @return the unix timestamp in seconds when the funding phase starts
      */
-    function startsAt() public view returns (uint256) {
+    function startsAt() external view returns (uint256) {
         return _startTimestamp;
     }
 
@@ -509,12 +522,12 @@ contract ERC20CrowdFinancingV1 is Initializable {
     /**
      * @return the unix timestamp in seconds when the funding phase ends
      */
-    function expiresAt() public view returns (uint256) {
+    function expiresAt() external view returns (uint256) {
         return _expirationTimestamp;
     }
 
     /**
-     * @return true if the funding phase exipired
+     * @return true if the funding phase expired
      */
     function expired() public view returns (bool) {
         return block.timestamp >= _expirationTimestamp;
@@ -523,14 +536,14 @@ contract ERC20CrowdFinancingV1 is Initializable {
     /**
      * @return the address of the beneficiary
      */
-    function beneficiaryAddress() public view returns (address) {
+    function beneficiaryAddress() external view returns (address) {
         return _beneficiary;
     }
 
     /**
      * @return the address of the token
      */
-    function tokenAddress() public view returns (address) {
+    function tokenAddress() external view returns (address) {
         return address(_token);
     }
 
@@ -544,14 +557,14 @@ contract ERC20CrowdFinancingV1 is Initializable {
     /**
      * @return the minimum fund target for the round to be considered successful
      */
-    function minimumFundTarget() public view returns (uint256) {
+    function minimumFundTarget() external view returns (uint256) {
         return _fundTargetMin;
     }
 
     /**
      * @return the maximum fund target
      */
-    function maximumFundTarget() public view returns (uint256) {
+    function maximumFundTarget() external view returns (uint256) {
         return _fundTargetMax;
     }
 }

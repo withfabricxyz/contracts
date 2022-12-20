@@ -141,7 +141,7 @@ contract EthCrowdFinancingV1Test is Test {
         deposit(depositor, 1e18);
         assertEq(1e18, address(campaign).balance);
         assertEq(1e18, campaign.depositTotal());
-        assertEq(1e18, campaign.depositAmount(depositor));
+        assertEq(1e18, campaign.depositedAmount(depositor));
         assertEq(0, campaign.payoutTotal());
     }
 
@@ -159,7 +159,7 @@ contract EthCrowdFinancingV1Test is Test {
         deposit(depositor, 9e17);
         deposit(depositor, 1e17);
         assertEq(1e18, campaign.depositTotal());
-        assertEq(1e18, campaign.depositAmount(depositor));
+        assertEq(1e18, campaign.depositedAmount(depositor));
         vm.expectRevert("Deposit amount is too high");
         deposit(depositor, 1e17);
     }
@@ -357,7 +357,7 @@ contract EthCrowdFinancingV1Test is Test {
         withdraw(_campaign, feeCollector);
 
         assertApproxEqAbs(0, address(_campaign).balance, 4);
-        assertApproxEqAbs(25000000000000000, feeCollector.balance, 1e15);
+        assertApproxEqAbs(24390243902439024, feeCollector.balance, 5);
     }
 
     function testInvalidFeeConfig() public {
