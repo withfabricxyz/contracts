@@ -4,6 +4,7 @@ pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin-upgradeable/contracts/proxy/utils/Initializable.sol";
+import "@openzeppelin-upgradeable/contracts/security/ReentrancyGuardUpgradeable.sol";
 
 /**
  *
@@ -48,7 +49,7 @@ import "@openzeppelin-upgradeable/contracts/proxy/utils/Initializable.sol";
  * value commensurate with the fee, and the total deposits is also increased by that amount.
  *
  */
-contract ERC20CrowdFinancingV1 is Initializable {
+contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
     // Max campaign duration: 90 Days
     uint256 private constant MAX_DURATION_SECONDS = 7776000;
 
@@ -215,6 +216,8 @@ contract ERC20CrowdFinancingV1 is Initializable {
         _depositTotal = 0;
         _withdrawTotal = 0;
         _state = State.FUNDING;
+
+        __ReentrancyGuard_init();
     }
 
     ///////////////////////////////////////////
@@ -235,24 +238,17 @@ contract ERC20CrowdFinancingV1 is Initializable {
      * - state must equal FUNDING
      * - `amount` must be <= token allowance for the contract
      */
-    function deposit(uint256 amount) external {
+    function deposit(uint256 amount) external nonReentrant {
         require(depositAllowed(), "Deposits are not allowed");
-
         address account = msg.sender;
-        uint256 allowed = _token.allowance(account, address(this));
-
-        require(amount <= allowed, "Deposit amount exeeds token allowance");
-
         uint256 total = _deposits[account] + amount;
-
         require(total >= _minDeposit, "Deposit amount is too low");
         require(total <= _maxDeposit, "Deposit amount is too high");
 
-        _deposits[account] += amount;
-        _depositTotal += amount;
-        emit Deposit(account, amount);
-
-        require(_token.transferFrom(msg.sender, address(this), amount), "ERC20 transfer failed");
+        uint256 actual = _transferSafe(msg.sender, amount);
+        _deposits[account] += actual;
+        _depositTotal += actual;
+        emit Deposit(account, actual);
     }
 
     /**
@@ -376,17 +372,12 @@ contract ERC20CrowdFinancingV1 is Initializable {
      *
      * Emits a {Payout} event.
      */
-    function makePayment(uint256 amount) external {
+    function makePayment(uint256 amount) external nonReentrant {
         require(_state == State.FUNDED, "Cannot accept payment");
         require(amount > 0, "Amount is 0");
-
-        uint256 allowed = _token.allowance(msg.sender, address(this));
-        require(amount <= allowed, "Payment amount exeeds token allowance");
-
-        emit Payout(msg.sender, amount);
-        _payoutTotal += amount;
-
-        require(_token.transferFrom(msg.sender, address(this), amount), "ERC20 transfer failed");
+        uint256 actual = _transferSafe(msg.sender, amount);
+        emit Payout(msg.sender, actual);
+        _payoutTotal += actual;
     }
 
     /**
@@ -483,6 +474,24 @@ contract ERC20CrowdFinancingV1 is Initializable {
     ///////////////////////////////////////////
     // Utility Functons
     ///////////////////////////////////////////
+
+    /**
+     * Token transfer function which leverages allowance. Additionally, it accounts
+     * for tokens which take fees on transfer. Fetch the balance of this contract
+     * before and after transfer, to determine the real amount of tokens transferred.
+     *
+     * Note this contract is not compatible with tokens that rebase
+     *
+     * @return the amount of tokens transferred after fees
+     */
+    function _transferSafe(address account, uint256 amount) private returns (uint256) {
+        uint256 allowed = _token.allowance(msg.sender, address(this));
+        require(amount <= allowed, "Amount exceeds token allowance");
+        uint256 priorBalance = _token.balanceOf(address(this));
+        require(_token.transferFrom(account, address(this), amount), "ERC20 transfer failed");
+        uint256 postBalance = _token.balanceOf(address(this));
+        return postBalance - priorBalance;
+    }
 
     /**
      * @return The current state of financing

@@ -202,7 +202,7 @@ contract ERC20CrowdFinancingV1Test is Test {
     function testAllowanceMismatch() public {
         vm.startPrank(depositor);
         token.approve(address(campaign), 1e12);
-        vm.expectRevert("Deposit amount exeeds token allowance");
+        vm.expectRevert("Amount exceeds token allowance");
         campaign.deposit(1e18);
     }
 
@@ -326,7 +326,7 @@ contract ERC20CrowdFinancingV1Test is Test {
         vm.expectRevert("Amount is 0");
         campaign.makePayment(0);
 
-        vm.expectRevert("Payment amount exeeds token allowance");
+        vm.expectRevert("Amount exceeds token allowance");
         campaign.makePayment(1e18);
 
         vm.stopPrank();
