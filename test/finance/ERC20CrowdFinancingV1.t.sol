@@ -15,6 +15,8 @@ contract ERC20CrowdFinancingV1Test is Test {
     address internal depositor = 0xb4c79DAB8f259c7Aee6E5b2aa729821864227E81;
     address internal depositor2 = 0xB4C79DAB8f259C7aEE6E5B2aa729821864227E8a;
     address internal depositor3 = 0xb4C79Dab8F259C7AEe6e5b2Aa729821864227e7A;
+    address internal depositor4 = 0xB4c79DAB8f259C7AEE6e5B2Aa729821764227E8A;
+    address internal depositor5 = 0xB4C79DAB8f259c7Aee6E5b2AA729821764227e7A;
     address internal depositorEmpty = 0xC4C79dAB8F259C7Aee6e5B2aa729821864227e81;
     address internal feeCollector = 0xC4c79dAb8F259c7AEE6e5b2aA729821864227E87;
 
@@ -27,7 +29,7 @@ contract ERC20CrowdFinancingV1Test is Test {
     function deposit(ERC20CrowdFinancingV1 _campaign, address _depositor, uint256 amount) public {
         vm.startPrank(_depositor);
         token.approve(address(_campaign), amount);
-        _campaign.deposit();
+        _campaign.deposit(amount);
         vm.stopPrank();
     }
 
@@ -61,7 +63,8 @@ contract ERC20CrowdFinancingV1Test is Test {
 
     function yieldValue(ERC20CrowdFinancingV1 _campaign, uint256 amount) public {
         vm.startPrank(beneficiary);
-        token.transfer(address(_campaign), amount);
+        token.approve(address(_campaign), amount);
+        _campaign.makePayment(amount);
         vm.stopPrank();
     }
 
@@ -105,11 +108,15 @@ contract ERC20CrowdFinancingV1Test is Test {
         deal(depositor, 1e18);
         deal(depositor2, 1e18);
         deal(depositor3, 1e18);
+        deal(depositor4, 1e18);
+        deal(depositor5, 1e18);
         deal(beneficiary, 1e18);
 
         dealTokens(depositor, 9e18);
         dealTokens(depositor2, 9e18);
         dealTokens(depositor3, 9e18);
+        dealTokens(depositor4, 9e18);
+        dealTokens(depositor5, 9e18);
     }
 
     function testInitialDeployment() public {
@@ -167,14 +174,14 @@ contract ERC20CrowdFinancingV1Test is Test {
     function testUnapprovedDeposit() public {
         vm.expectRevert("Deposit amount is too low");
         vm.startPrank(depositor);
-        campaign.deposit();
+        campaign.deposit(0);
     }
 
     function testDeposit() public {
         deposit(depositor, 1e18);
         assertEq(1e18, campaign.tokenBalance());
         assertEq(1e18, campaign.depositTotal());
-        assertEq(1e18, campaign.depositAmount(depositor));
+        assertEq(1e18, campaign.depositedAmount(depositor));
         assertEq(0, campaign.payoutTotal());
     }
 
@@ -182,26 +189,33 @@ contract ERC20CrowdFinancingV1Test is Test {
         vm.startPrank(depositor);
         token.approve(address(campaign), 6e18);
         vm.expectRevert("Deposit amount is too high");
-        campaign.deposit();
+        campaign.deposit(6e18);
     }
 
     function testSmallDeposit() public {
         vm.startPrank(depositor);
         token.approve(address(campaign), 1e12);
         vm.expectRevert("Deposit amount is too low");
-        campaign.deposit();
+        campaign.deposit(1e12);
+    }
+
+    function testAllowanceMismatch() public {
+        vm.startPrank(depositor);
+        token.approve(address(campaign), 1e12);
+        vm.expectRevert("Amount exceeds token allowance");
+        campaign.deposit(1e18);
     }
 
     function testManyDeposits() public {
         deposit(depositor, 9e17);
         deposit(depositor, 1e17);
         assertEq(1e18, campaign.depositTotal());
-        assertEq(1e18, campaign.depositAmount(depositor));
+        assertEq(1e18, campaign.depositedAmount(depositor));
 
         vm.startPrank(depositor);
         token.approve(address(campaign), 1e12);
         vm.expectRevert("Deposit amount is too high");
-        campaign.deposit();
+        campaign.deposit(1e12);
     }
 
     function testManyDepositsFromMany() public {
@@ -218,7 +232,7 @@ contract ERC20CrowdFinancingV1Test is Test {
     function testDepositWithNoBalance() public {
         vm.startPrank(depositorEmpty);
         vm.expectRevert("Deposit amount is too low");
-        campaign.deposit();
+        campaign.deposit(0);
     }
 
     function testFundsTransfer() public {
@@ -240,8 +254,17 @@ contract ERC20CrowdFinancingV1Test is Test {
         deposit(depositor2, 1e18);
         deposit(depositor3, 1e18);
         assertTrue(campaign.fundTargetMet());
-        vm.expectRevert("Raise window is not expired");
+        assertFalse(campaign.fundTargetMaxMet());
+        assertFalse(campaign.expired());
+        vm.expectRevert("More time/funds required");
         campaign.processFunds();
+        deposit(depositor4, 1e18);
+        deposit(depositor5, 1e18);
+        assertTrue(campaign.fundTargetMaxMet());
+        assertFalse(campaign.expired());
+        campaign.processFunds();
+        assertTrue(ERC20CrowdFinancingV1.State.FUNDED == campaign.state());
+        assertTrue(campaign.withdrawAllowed());
     }
 
     function testSecondProcess() public {
@@ -269,6 +292,19 @@ contract ERC20CrowdFinancingV1Test is Test {
         assertEq(0, campaign.payoutBalance(depositorEmpty));
     }
 
+    function testMultiReturns() public {
+        fundAndTransfer();
+        yieldValue(1e18);
+
+        uint256 dBalance = balanceOf(depositor);
+        withdraw(campaign, depositor);
+        yieldValue(1e18);
+        withdraw(campaign, depositor);
+
+        assertEq(666666666666666666, balanceOf(depositor) - dBalance);
+        assertEq(0, campaign.payoutBalance(depositor));
+    }
+
     function testProfit() public {
         fundAndTransfer();
         dealTokens(beneficiary, 1e20);
@@ -279,16 +315,19 @@ contract ERC20CrowdFinancingV1Test is Test {
 
     function testReturnsViaPayoutFn() public {
         vm.expectRevert("Cannot accept payment");
-        campaign.makePayment();
+        campaign.makePayment(1e18);
 
         fundAndTransfer();
         assertEq(0, balanceOf(address(campaign)));
         vm.startPrank(beneficiary);
         token.approve(address(campaign), 1e18);
-        campaign.makePayment();
+        campaign.makePayment(1e18);
 
-        vm.expectRevert("Token allowance is 0");
-        campaign.makePayment();
+        vm.expectRevert("Amount is 0");
+        campaign.makePayment(0);
+
+        vm.expectRevert("Amount exceeds token allowance");
+        campaign.makePayment(1e18);
 
         vm.stopPrank();
         assertEq(1e18, balanceOf(address(campaign)));
@@ -343,14 +382,14 @@ contract ERC20CrowdFinancingV1Test is Test {
         fundAndTransfer();
         vm.startPrank(depositor);
         vm.expectRevert("Deposits are not allowed");
-        campaign.deposit();
+        campaign.deposit(1e18);
     }
 
     function testDepositAfterFailed() public {
         fundAndFail();
         vm.startPrank(depositor);
         vm.expectRevert("Deposits are not allowed");
-        campaign.deposit();
+        campaign.deposit(1e18);
     }
 
     ////////////
@@ -386,10 +425,10 @@ contract ERC20CrowdFinancingV1Test is Test {
     }
 
     function testUpfrontFeesSplit() public {
-        ERC20CrowdFinancingV1 _campaign = createFeeCampaign(5000, 0); // 50%!
+        ERC20CrowdFinancingV1 _campaign = createFeeCampaign(2500, 0); // 25%!
         fundAndTransferCampaign(_campaign);
-        assertEq(balanceOf(beneficiary), 1.5e18);
-        assertEq(balanceOf(feeCollector), 1.5e18);
+        assertEq(balanceOf(beneficiary), 2.25e18);
+        assertEq(balanceOf(feeCollector), 0.75e18);
     }
 
     function testPayoutFees() public {
@@ -403,6 +442,41 @@ contract ERC20CrowdFinancingV1Test is Test {
         withdraw(_campaign, feeCollector);
 
         assertApproxEqAbs(0, balanceOf(address(_campaign)), 4);
-        assertApproxEqAbs(25000000000000000, balanceOf(feeCollector), 1e15);
+        assertApproxEqAbs(24390243902439024, balanceOf(feeCollector), 5);
+    }
+
+    function testInvalidFeeConfig() public {
+        ERC20CrowdFinancingV1 withFees = new ERC20CrowdFinancingV1();
+        // unmark initialized, eg: campaign._initialized = 0;
+        vm.store(address(withFees), bytes32(uint256(0)), bytes32(0));
+        vm.expectRevert("Fees must be 0 when there is no fee collector");
+        withFees.initialize(
+            beneficiary,
+            2e18, // 2ETH
+            5e18, // 5ETH
+            2e17, // 0.2ETH
+            1e18, // 1ETH
+            block.timestamp,
+            block.timestamp + expirationFuture,
+            address(token),
+            address(0),
+            100,
+            0
+        );
+
+        vm.expectRevert("Fees required when fee collector is present");
+        withFees.initialize(
+            beneficiary,
+            2e18, // 2ETH
+            5e18, // 5ETH
+            2e17, // 0.2ETH
+            1e18, // 1ETH
+            block.timestamp,
+            block.timestamp + expirationFuture,
+            address(token),
+            feeCollector,
+            0,
+            0
+        );
     }
 }

@@ -12,6 +12,8 @@ contract EthCrowdFinancingV1Test is Test {
     address internal depositor = 0xb4c79DAB8f259c7Aee6E5b2aa729821864227E81;
     address internal depositor2 = 0xB4C79DAB8f259C7aEE6E5B2aa729821864227E8a;
     address internal depositor3 = 0xb4C79Dab8F259C7AEe6e5b2Aa729821864227e7A;
+    address internal depositor4 = 0xB4c79DAB8f259C7AEE6e5B2Aa729821764227E8A;
+    address internal depositor5 = 0xB4C79DAB8f259c7Aee6E5b2AA729821764227e7A;
     address internal depositorEmpty = 0xC4C79dAB8F259C7Aee6e5B2aa729821864227e81;
     address internal feeCollector = 0xC4c79dAb8F259c7AEE6e5b2aA729821864227E87;
 
@@ -89,6 +91,8 @@ contract EthCrowdFinancingV1Test is Test {
         deal(depositor, 9e18);
         deal(depositor2, 9e18);
         deal(depositor3, 9e18);
+        deal(depositor4, 9e18);
+        deal(depositor5, 9e18);
     }
 
     function testInitialDeployment() public {
@@ -137,7 +141,7 @@ contract EthCrowdFinancingV1Test is Test {
         deposit(depositor, 1e18);
         assertEq(1e18, address(campaign).balance);
         assertEq(1e18, campaign.depositTotal());
-        assertEq(1e18, campaign.depositAmount(depositor));
+        assertEq(1e18, campaign.depositedAmount(depositor));
         assertEq(0, campaign.payoutTotal());
     }
 
@@ -155,7 +159,7 @@ contract EthCrowdFinancingV1Test is Test {
         deposit(depositor, 9e17);
         deposit(depositor, 1e17);
         assertEq(1e18, campaign.depositTotal());
-        assertEq(1e18, campaign.depositAmount(depositor));
+        assertEq(1e18, campaign.depositedAmount(depositor));
         vm.expectRevert("Deposit amount is too high");
         deposit(depositor, 1e17);
     }
@@ -193,8 +197,17 @@ contract EthCrowdFinancingV1Test is Test {
         deposit(depositor2, 1e18);
         deposit(depositor3, 1e18);
         assertTrue(campaign.fundTargetMet());
-        vm.expectRevert("Raise window is not expired");
+        assertFalse(campaign.fundTargetMaxMet());
+        assertFalse(campaign.expired());
+        vm.expectRevert("More time/funds required");
         campaign.processFunds();
+        deposit(depositor4, 1e18);
+        deposit(depositor5, 1e18);
+        assertTrue(campaign.fundTargetMaxMet());
+        assertFalse(campaign.expired());
+        campaign.processFunds();
+        assertTrue(EthCrowdFinancingV1.State.FUNDED == campaign.state());
+        assertTrue(campaign.withdrawAllowed());
     }
 
     function testSecondProcess() public {
@@ -220,6 +233,19 @@ contract EthCrowdFinancingV1Test is Test {
         assertEq(333333333333333333, campaign.payoutBalance(depositor2));
         assertEq(333333333333333333, campaign.payoutBalance(depositor3));
         assertEq(0, campaign.payoutBalance(depositorEmpty));
+    }
+
+    function testMultiReturns() public {
+        fundAndTransfer();
+        yieldValue(1e18);
+
+        uint256 dBalance = depositor.balance;
+        withdraw(campaign, depositor);
+        yieldValue(1e18);
+        withdraw(campaign, depositor);
+
+        assertEq(666666666666666666, depositor.balance - dBalance);
+        assertEq(0, campaign.payoutBalance(depositor));
     }
 
     function testFundingFailure() public {
@@ -314,10 +340,10 @@ contract EthCrowdFinancingV1Test is Test {
     }
 
     function testUpfrontFeesSplit() public {
-        EthCrowdFinancingV1 _campaign = createFeeCampaign(5000, 0); // 50%!
+        EthCrowdFinancingV1 _campaign = createFeeCampaign(2500, 0); // 25%!
         fundAndTransferCampaign(_campaign);
-        assertEq(beneficiary.balance, 1.5e18);
-        assertEq(feeCollector.balance, 1.5e18);
+        assertEq(beneficiary.balance, 2.25e18);
+        assertEq(feeCollector.balance, 0.75e18);
     }
 
     function testPayoutFees() public {
@@ -331,6 +357,39 @@ contract EthCrowdFinancingV1Test is Test {
         withdraw(_campaign, feeCollector);
 
         assertApproxEqAbs(0, address(_campaign).balance, 4);
-        assertApproxEqAbs(25000000000000000, feeCollector.balance, 1e15);
+        assertApproxEqAbs(24390243902439024, feeCollector.balance, 5);
+    }
+
+    function testInvalidFeeConfig() public {
+        EthCrowdFinancingV1 withFees = new EthCrowdFinancingV1();
+        // unmark initialized, eg: campaign._initialized = 0;
+        vm.store(address(withFees), bytes32(uint256(0)), bytes32(0));
+        vm.expectRevert("Fees must be 0 when there is no fee collector");
+        withFees.initialize(
+            beneficiary,
+            2e18, // 2ETH
+            5e18, // 5ETH
+            2e17, // 0.2ETH
+            1e18, // 1ETH
+            block.timestamp,
+            block.timestamp + expirationFuture,
+            address(0),
+            100,
+            0
+        );
+
+        vm.expectRevert("Fees required when fee collector is present");
+        withFees.initialize(
+            beneficiary,
+            2e18, // 2ETH
+            5e18, // 5ETH
+            2e17, // 0.2ETH
+            1e18, // 1ETH
+            block.timestamp,
+            block.timestamp + expirationFuture,
+            feeCollector,
+            0,
+            0
+        );
     }
 }
