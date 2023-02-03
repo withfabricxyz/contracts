@@ -40,6 +40,7 @@ contract DataQuiltRegistryV1Test is TestHelper {
 
         depositEth(cf, depositor, 1e18);
         vm.startPrank(depositor);
+        assert(registry.canMint(address(cf)));
         registry.mintContributionToken(id);
 
         assertEq(1, registry.balanceOf(depositor));
@@ -48,6 +49,7 @@ contract DataQuiltRegistryV1Test is TestHelper {
             registry.tokenURI(id)
         );
 
+        assert(!registry.canMint(address(cf)));
         vm.expectRevert("Err: 101, already minted");
         registry.mintContributionToken(id);
         vm.expectRevert("Err: 101, already minted");
