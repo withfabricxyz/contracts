@@ -38,19 +38,20 @@ contract DataQuiltRegistryV1 is ERC721 {
     function mintContributionToken(uint256 tokenId) external {
         address account = msg.sender;
         address campaignAddress = address(uint160(tokenId >> 96));
-        require(canMint(campaignAddress), "Err: 101, already minted");
-        // We can use the same contract wrapper, since funtion signature is identical
-        // We should probably have another assertion in the future, verifiying this is in
-        // fact a CF contract... as someone could spoof this. That said, the rendering would
-        // be incorrect
-        EthCrowdFinancingV1 campaign = EthCrowdFinancingV1(payable(campaignAddress));
-        require(campaign.depositedAmount(account) > 0, "Err: 100, No deposits registered");
+        require(canMint(campaignAddress), "Err: already minted or deposits not found");
         _safeMint(account, tokenId);
         _campaignMints[campaignAddress][account] = true;
     }
 
     function canMint(address campaignAddress) public view returns (bool) {
-        return !_campaignMints[campaignAddress][msg.sender];
+        if (_campaignMints[campaignAddress][msg.sender]) {
+            return false;
+        }
+        // We can use the same contract wrapper, since funtion signature is identical
+        // We should probably have another assertion in the future, verifiying this is in
+        // fact a CF contract... as someone could spoof this. That said, the rendering would
+        // be incorrect
+        return EthCrowdFinancingV1(payable(campaignAddress)).depositedAmount(msg.sender) > 0;
     }
 
     function _baseURI() internal view override returns (string memory) {

@@ -30,7 +30,7 @@ contract DataQuiltRegistryV1Test is TestHelper {
     function testMintWithoutDeposits() public {
         EthCrowdFinancingV1 cf = createETHCampaign();
         uint256 id = generateId(address(cf), uint32(0xff));
-        vm.expectRevert("Err: 100, No deposits registered");
+        vm.expectRevert("Err: already minted or deposits not found");
         registry.mintContributionToken(id);
     }
 
@@ -50,9 +50,9 @@ contract DataQuiltRegistryV1Test is TestHelper {
         );
 
         assert(!registry.canMint(address(cf)));
-        vm.expectRevert("Err: 101, already minted");
+        vm.expectRevert("Err: already minted or deposits not found");
         registry.mintContributionToken(id);
-        vm.expectRevert("Err: 101, already minted");
+        vm.expectRevert("Err: already minted or deposits not found");
         registry.mintContributionToken(id + 1);
     }
 
