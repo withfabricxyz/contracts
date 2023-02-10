@@ -12,7 +12,7 @@ import "src/finance/DataQuiltRegistryV1.sol";
 contract DataQuiltRegistryV1Test is TestHelper {
     DataQuiltRegistryV1 internal registry;
 
-    function generateId(address addr, uint32 variant) public returns (uint256) {
+    function generateId(address addr, uint32 variant) public pure returns (uint256) {
         return uint256(bytes32(abi.encodePacked(addr, uint64(0), variant)));
     }
 
