@@ -6,6 +6,15 @@ import "@forge/console2.sol";
 import "src/finance/CrowdFinancingV1.sol";
 import "src/tokens/ERC20Token.sol";
 
+/*
+
+TODO:
+Test eth dep, with, payment, etc
+
+Transfer
+Withdraw
+*/
+
 contract CrowdFinancingV1Test is Test {
     CrowdFinancingV1 internal campaign;
     ERC20Token internal token;
@@ -29,7 +38,7 @@ contract CrowdFinancingV1Test is Test {
     function deposit(CrowdFinancingV1 _campaign, address _depositor, uint256 amount) public {
         vm.startPrank(_depositor);
         token.approve(address(_campaign), amount);
-        _campaign.deposit(amount);
+        _campaign.depositTokens(amount);
         vm.stopPrank();
     }
 
@@ -64,7 +73,7 @@ contract CrowdFinancingV1Test is Test {
     function yieldValue(CrowdFinancingV1 _campaign, uint256 amount) public {
         vm.startPrank(beneficiary);
         token.approve(address(_campaign), amount);
-        _campaign.makePayment(amount);
+        _campaign.yieldTokens(amount);
         vm.stopPrank();
     }
 
@@ -130,6 +139,10 @@ contract CrowdFinancingV1Test is Test {
         assertEq(2e18, campaign.minimumFundTarget());
         assertEq(5e18, campaign.maximumFundTarget());
         assertEq(beneficiary, campaign.beneficiaryAddress());
+        assertEq(address(0), campaign.feeCollector());
+        assertEq(0, campaign.upfrontFeeBips());
+        assertEq(0, campaign.payoutFeeBips());
+        assertTrue(campaign.erc20Denominated());
     }
 
     function testReinit() public {
@@ -155,7 +168,6 @@ contract CrowdFinancingV1Test is Test {
         rewind(block.timestamp);
         assertFalse(campaign.started());
         assertFalse(campaign.depositAllowed());
-        assertFalse(campaign.erc20Denominated());
     }
 
     function testEndChecks() public {
@@ -175,7 +187,7 @@ contract CrowdFinancingV1Test is Test {
     function testUnapprovedDeposit() public {
         vm.expectRevert("Deposit amount is too low");
         vm.startPrank(depositor);
-        campaign.deposit(0);
+        campaign.depositTokens(0);
     }
 
     function testDeposit() public {
@@ -190,21 +202,21 @@ contract CrowdFinancingV1Test is Test {
         vm.startPrank(depositor);
         token.approve(address(campaign), 6e18);
         vm.expectRevert("Deposit amount is too high");
-        campaign.deposit(6e18);
+        campaign.depositTokens(6e18);
     }
 
     function testSmallDeposit() public {
         vm.startPrank(depositor);
         token.approve(address(campaign), 1e12);
         vm.expectRevert("Deposit amount is too low");
-        campaign.deposit(1e12);
+        campaign.depositTokens(1e12);
     }
 
     function testAllowanceMismatch() public {
         vm.startPrank(depositor);
         token.approve(address(campaign), 1e12);
         vm.expectRevert("Amount exceeds token allowance");
-        campaign.deposit(1e18);
+        campaign.depositTokens(1e18);
     }
 
     function testManyDeposits() public {
@@ -216,7 +228,7 @@ contract CrowdFinancingV1Test is Test {
         vm.startPrank(depositor);
         token.approve(address(campaign), 1e12);
         vm.expectRevert("Deposit amount is too high");
-        campaign.deposit(1e12);
+        campaign.depositTokens(1e12);
     }
 
     function testManyDepositsFromMany() public {
@@ -233,7 +245,7 @@ contract CrowdFinancingV1Test is Test {
     function testDepositWithNoBalance() public {
         vm.startPrank(depositorEmpty);
         vm.expectRevert("Deposit amount is too low");
-        campaign.deposit(0);
+        campaign.depositTokens(0);
     }
 
     function testFundsTransfer() public {
@@ -316,19 +328,19 @@ contract CrowdFinancingV1Test is Test {
 
     function testReturnsViaPayoutFn() public {
         vm.expectRevert("Cannot accept payment");
-        campaign.makePayment(1e18);
+        campaign.yieldTokens(1e18);
 
         fundAndTransfer();
         assertEq(0, balanceOf(address(campaign)));
         vm.startPrank(beneficiary);
         token.approve(address(campaign), 1e18);
-        campaign.makePayment(1e18);
+        campaign.yieldTokens(1e18);
 
         vm.expectRevert("Amount is 0");
-        campaign.makePayment(0);
+        campaign.yieldTokens(0);
 
         vm.expectRevert("Amount exceeds token allowance");
-        campaign.makePayment(1e18);
+        campaign.yieldTokens(1e18);
 
         vm.stopPrank();
         assertEq(1e18, balanceOf(address(campaign)));
@@ -383,21 +395,21 @@ contract CrowdFinancingV1Test is Test {
         fundAndTransfer();
         vm.startPrank(depositor);
         vm.expectRevert("Deposits are not allowed");
-        campaign.deposit(1e18);
+        campaign.depositTokens(1e18);
     }
 
     function testDepositAfterFailed() public {
         fundAndFail();
         vm.startPrank(depositor);
         vm.expectRevert("Deposits are not allowed");
-        campaign.deposit(1e18);
+        campaign.depositTokens(1e18);
     }
 
     ////////////
     // Fee Collection Tests
     ////////////
 
-    function createFeeCampaign(uint256 upfrontBips, uint256 payoutBips) internal returns (CrowdFinancingV1) {
+    function createFeeCampaign(uint16 upfrontBips, uint16 payoutBips) internal returns (CrowdFinancingV1) {
         CrowdFinancingV1 withFees = new CrowdFinancingV1();
         // unmark initialized, eg: campaign._initialized = 0;
         vm.store(address(withFees), bytes32(uint256(0)), bytes32(0));

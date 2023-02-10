@@ -99,4 +99,8 @@ contract CrowdFinancingV1Factory is Ownable {
         _feePayoutBips = feePayoutBips;
         emit FeeScheduleChange(feeCollector, feeUpfrontBips, feePayoutBips);
     }
+
+    function feeSchedule() external view returns (address, uint16, uint16) {
+        return (_feeCollector, _feeUpfrontBips, _feePayoutBips);
+    }
 }
