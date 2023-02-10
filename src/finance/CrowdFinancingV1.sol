@@ -30,14 +30,24 @@ import "@openzeppelin-upgradeable/contracts/security/ReentrancyGuardUpgradeable.
  *
  * Deposits:
  * Accounts deposit tokens by first creating an allowance in the token contract, and then
- * calling the deposit function, which will transfer the entire allowance if all constraints
+ * calling the depositTokens function, which will transfer the tokens if all constraints
  * are satisfied.
  *
+ * For ETH campaigns, a depositer calls depositEth with a given ETH value.
+ *
  * Payouts:
- * The beneficiary makes payments by invoking the makePayment function which works similar to the deposit function.
+ * The beneficiary makes payments by invoking the yieldTokens or yieldEth functions which works
+ * similar to the deposit function.
  *
  * As the payout balance accrues, depositors can invoke the withdraw function to transfer their
  * payout balance.
+ *
+ * ERC20 Compliant
+ *
+ * All deposits are tracked and used to calculate ERC20 total supply. Depositors can transfer
+ * their deposit balance to another account using ERC20 functionality. Transfers of deposit tokens will
+ * also transfer future withdraw capability to the receiver. This allows for account transfer and
+ * makes liquidity possible.
  *
  * Fees:
  * The contract can be initialized with an optional fee collector address with options for two
@@ -50,22 +60,27 @@ import "@openzeppelin-upgradeable/contracts/security/ReentrancyGuardUpgradeable.
  *
  */
 contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
+
+    // Guard to gate ERC20 specific functions
     modifier erc20Only() {
         require(_erc20, "erc20 only fn called");
         _;
     }
 
+    // Guard to gate ETH specific functions
     modifier ethOnly() {
         require(!_erc20, "ETH only fn called");
         _;
     }
 
+    // Guard to ensure yields are allowed
     modifier yieldGuard(uint256 amount) {
         require(_state == State.FUNDED, "Cannot accept payment");
         require(amount > 0, "Amount is 0");
         _;
     }
 
+    // Guard to ensure deposits are allowed
     modifier depositGuard(uint256 amount) {
         require(depositAllowed(), "Deposits are not allowed");
         uint256 total = _deposits[msg.sender] + amount;
@@ -191,7 +206,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
      * @param startTimestamp the UNIX time in seconds denoting when deposits can start
      * @param endTimestamp the UNIX time in seconds denoting when deposits are no longer allowed
      * @param tokenAddr the address of the ERC20 token used for payments, or 0 address for native token
-     * @param feeCollector the address of the fee collector, or the 0 address if no fees are collected
+     * @param feeCollectorAddr the address of the fee collector, or the 0 address if no fees are collected
      * @param feeUpfrontBips the upfront fee in basis points, calculated during processing
      * @param feePayoutBips the payout fee in basis points. Dilutes the cap table for fee collection
      */
@@ -204,7 +219,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         uint256 startTimestamp,
         uint256 endTimestamp,
         address tokenAddr,
-        address feeCollector,
+        address feeCollectorAddr,
         uint16 feeUpfrontBips,
         uint16 feePayoutBips
     ) external initializer {
@@ -223,7 +238,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         require(feeUpfrontBips <= MAX_FEE_BIPS, "Upfront fee too high");
         require(feePayoutBips <= MAX_FEE_BIPS, "Payout fee too high");
 
-        if (feeCollector != address(0)) {
+        if (feeCollectorAddr != address(0)) {
             require(feeUpfrontBips > 0 || feePayoutBips > 0, "Fees required when fee collector is present");
         } else {
             require(feeUpfrontBips == 0 && feePayoutBips == 0, "Fees must be 0 when there is no fee collector");
@@ -239,7 +254,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         _token = IERC20(tokenAddr);
         _erc20 = tokenAddr != address(0);
 
-        _feeCollector = feeCollector;
+        _feeCollector = feeCollectorAddr;
         _feeUpfrontBips = feeUpfrontBips;
         _feePayoutBips = feePayoutBips;
 
@@ -454,6 +469,9 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
      * @return The total amount of tokens paid back to a given depositor
      */
     function payoutsMadeTo(address account) private view returns (uint256) {
+        if (_depositTotal == 0) {
+            return 0;
+        }
         return (_deposits[account] * payoutTotal()) / _depositTotal;
     }
 
@@ -615,10 +633,10 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         if (_state == State.FUNDED) {
             uint256 fromWithdraws = _withdraws[from];
             uint256 withdrawAmount = ((fromBalance - amount) * fromWithdraws) / fromBalance;
-            _withdraws[from] = fromWithdraws - withdrawAmount;
-            // Overflow not possible: the sum of all balances is capped by totalSupply, and the sum is preserved by
-            // decrementing then incrementing.
-            _withdraws[to] += withdrawAmount;
+            unchecked {
+              _withdraws[from] = fromWithdraws - withdrawAmount;
+              _withdraws[to] += withdrawAmount;
+            }
         }
 
         emit Transfer(from, to, amount);

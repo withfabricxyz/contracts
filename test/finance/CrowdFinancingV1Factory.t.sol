@@ -3,22 +3,22 @@ pragma solidity ^0.8.17;
 
 import "@forge/Test.sol";
 import "@forge/console2.sol";
-import "./util/TestHelper.sol";
+import "./CrowdFinancingV1/BaseCampaignTest.t.sol";
 import "src/finance/CrowdFinancingV1.sol";
 import "src/finance/CrowdFinancingV1Factory.sol";
 
-contract CrowdFinancingV1FactoryTest is TestHelper {
+contract CrowdFinancingV1FactoryTest is BaseCampaignTest {
     CrowdFinancingV1 internal impl;
     CrowdFinancingV1Factory internal factory;
 
     function setUp() public {
         impl = new CrowdFinancingV1();
         factory = new CrowdFinancingV1Factory(address(impl));
-        deal(depositor, 1e19);
+        deal(alice, 1e19);
     }
 
     function testDeployment() public {
-        vm.startPrank(depositor);
+        vm.startPrank(alice);
         address deployment = factory.deploy(beneficiary, 2e18, 5e18, 2e17, 1e18, 60 * 60, address(0));
 
         CrowdFinancingV1 campaign = CrowdFinancingV1(deployment);
@@ -42,8 +42,8 @@ contract CrowdFinancingV1FactoryTest is TestHelper {
         assertEq(100, upfront);
         assertEq(10, payout);
 
-        vm.startPrank(depositor);
+        vm.startPrank(alice);
         vm.expectRevert("Ownable: caller is not the owner");
-        factory.updateFeeSchedule(address(depositor), 100, 100);
+        factory.updateFeeSchedule(address(alice), 100, 100);
     }
 }

@@ -2,8 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "./ERC20CrowdFinancingV1.sol";
-import "./EthCrowdFinancingV1.sol";
+import "./CrowdFinancingV1.sol";
 
 /**
  *
@@ -47,11 +46,8 @@ contract DataQuiltRegistryV1 is ERC721 {
         if (_campaignMints[campaignAddress][msg.sender]) {
             return false;
         }
-        // We can use the same contract wrapper, since funtion signature is identical
-        // We should probably have another assertion in the future, verifiying this is in
-        // fact a CF contract... as someone could spoof this. That said, the rendering would
-        // be incorrect
-        return EthCrowdFinancingV1(payable(campaignAddress)).depositedAmount(msg.sender) > 0;
+        // Is it possible to verify this is a CFV1 contract?
+        return CrowdFinancingV1(payable(campaignAddress)).depositedAmount(msg.sender) > 0;
     }
 
     function _baseURI() internal view override returns (string memory) {
