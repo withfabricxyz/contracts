@@ -6,9 +6,9 @@ import "@forge/console2.sol";
 import "src/finance/CrowdFinancingV1.sol";
 import "src/tokens/ERC20Token.sol";
 import "./BaseCampaignTest.t.sol";
+import "./mocks/MockToken.sol";
 
 contract DepositTests is BaseCampaignTest {
-
     function testHappyPath() public multiTokenTest {
         dealMulti(alice, 1e19);
         deposit(alice, 1e18);
@@ -30,7 +30,7 @@ contract DepositTests is BaseCampaignTest {
 
         vm.startPrank(alice);
         vm.expectRevert("Deposits are not allowed");
-        campaign().depositEth{ value: 1e18 }();
+        campaign().depositEth{value: 1e18}();
     }
 
     function testEarlyDepositErc20() public erc20Test {
@@ -43,17 +43,17 @@ contract DepositTests is BaseCampaignTest {
     }
 
     function testInvalidERC20Deposit() public ethTest {
-      dealMulti(alice, 1e19);
-      vm.startPrank(alice);
-      vm.expectRevert("erc20 only fn called");
-      campaign().depositTokens(1e18);
+        dealMulti(alice, 1e19);
+        vm.startPrank(alice);
+        vm.expectRevert("erc20 only fn called");
+        campaign().depositTokens(1e18);
     }
 
     function testInvalidETHDeposit() public erc20Test {
-      dealMulti(alice, 1e19);
-      vm.startPrank(alice);
-      vm.expectRevert("ETH only fn called");
-      campaign().depositEth{ value: 1e18 }();
+        dealMulti(alice, 1e19);
+        vm.startPrank(alice);
+        vm.expectRevert("ETH only fn called");
+        campaign().depositEth{value: 1e18}();
     }
 
     function testLateDeposit() public ethTest {
@@ -76,7 +76,7 @@ contract DepositTests is BaseCampaignTest {
     function testSmallContribution() public ethTest prank(alice) {
         vm.expectRevert("Deposit amount is too low");
         deal(alice, 1e18);
-        campaign().depositEth{ value: 1e11 }();
+        campaign().depositEth{value: 1e11}();
     }
 
     function testBigThenSmallContribution() public multiTokenTest {
@@ -111,5 +111,16 @@ contract DepositTests is BaseCampaignTest {
         vm.startPrank(alice);
         vm.expectRevert("Deposits are not allowed");
         campaign().depositEth{value: 1e18}();
+    }
+
+    function testTransferFalseReturn() public erc20Test {
+        MockToken mt = new MockToken("T", "T", 1e21);
+        assignCampaign(createCampaign(address(mt)));
+        dealMulti(alice, 1e18);
+        mt.setTransferReturn(false);
+        vm.startPrank(alice);
+        token().approve(address(campaign()), 1e18);
+        vm.expectRevert("ERC20 transfer failed");
+        campaign().depositTokens(1e18);
     }
 }

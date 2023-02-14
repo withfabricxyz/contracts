@@ -5,10 +5,10 @@ import "@forge/Test.sol";
 import "@forge/console2.sol";
 import "src/finance/CrowdFinancingV1.sol";
 import "src/tokens/ERC20Token.sol";
+import "./mocks/MockToken.sol";
 import "./BaseCampaignTest.t.sol";
 
 contract TokenizationTests is BaseCampaignTest {
-
     function setUp() public {
         deal(alice, 1e19);
     }
@@ -70,5 +70,38 @@ contract TokenizationTests is BaseCampaignTest {
         assertEq(withdraws, campaign().withdrawsOf(alice) + campaign().withdrawsOf(newOwner), "Split roughly");
         assertApproxEqAbs(campaign().withdrawsOf(alice), campaign().withdrawsOf(newOwner), 1, "Equal withdraws");
         assertApproxEqAbs(campaign().payoutBalance(alice), campaign().payoutBalance(newOwner), 1, "Payout balance");
+    }
+
+    function testInvalidAllowanceAddresses() public ethTest {
+        fundAndTransfer();
+        vm.expectRevert("ERC20: approve to the zero address");
+        campaign().approve(address(0), 1e18);
+
+        vm.prank(address(0));
+        vm.expectRevert("ERC20: approve from the zero address");
+        campaign().approve(address(0), 1e18);
+    }
+
+    function testInvalidTransferAddresses() public ethTest {
+        fundAndTransfer();
+        vm.expectRevert("ERC20: transfer to the zero address");
+        campaign().transfer(address(0), 1e18);
+
+        vm.prank(address(0));
+        vm.expectRevert("ERC20: transfer from the zero address");
+        campaign().transfer(bob, 1e18);
+    }
+
+    function testInsufficientAllowance() public ethTest {
+        fundAndTransfer();
+
+        vm.startPrank(alice);
+        campaign().approve(bob, 1e18);
+        vm.stopPrank();
+
+        vm.startPrank(bob);
+        vm.expectRevert("ERC20: insufficient allowance");
+        campaign().transferFrom(alice, bob, 2e18);
+        vm.stopPrank();
     }
 }

@@ -60,7 +60,6 @@ import "@openzeppelin-upgradeable/contracts/security/ReentrancyGuardUpgradeable.
  *
  */
 contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
-
     // Guard to gate ERC20 specific functions
     modifier erc20Only() {
         require(_erc20, "erc20 only fn called");
@@ -205,7 +204,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
      * @param maxDeposit the maximum deposit an account can make in one or more deposits
      * @param startTimestamp the UNIX time in seconds denoting when deposits can start
      * @param endTimestamp the UNIX time in seconds denoting when deposits are no longer allowed
-     * @param tokenAddr the address of the ERC20 token used for payments, or 0 address for native token
+     * @param tokenAddr the address of the ERC20 token used for payments, or 0 address for native token (ETH)
      * @param feeCollectorAddr the address of the fee collector, or the 0 address if no fees are collected
      * @param feeUpfrontBips the upfront fee in basis points, calculated during processing
      * @param feePayoutBips the payout fee in basis points. Dilutes the cap table for fee collection
@@ -357,7 +356,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
             if (feeAmount > 0) {
                 emit Transfer(_feeCollector, feeAmount);
                 if (_erc20) {
-                    require(_token.transfer(_feeCollector, feeAmount), "Fee transfer failed");
+                    require(_token.transfer(_feeCollector, feeAmount), "ERC20: Fee transfer failed");
                 } else {
                     payable(_feeCollector).transfer(feeAmount);
                 }
@@ -365,7 +364,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
 
             emit Transfer(_beneficiary, transferAmount);
             if (_erc20) {
-                require(_token.transfer(_beneficiary, transferAmount), "Transfer failed");
+                require(_token.transfer(_beneficiary, transferAmount), "ERC20: Transfer failed");
             } else {
                 payable(_beneficiary).transfer(transferAmount);
             }
@@ -634,8 +633,8 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
             uint256 fromWithdraws = _withdraws[from];
             uint256 withdrawAmount = ((fromBalance - amount) * fromWithdraws) / fromBalance;
             unchecked {
-              _withdraws[from] = fromWithdraws - withdrawAmount;
-              _withdraws[to] += withdrawAmount;
+                _withdraws[from] = fromWithdraws - withdrawAmount;
+                _withdraws[to] += withdrawAmount;
             }
         }
 

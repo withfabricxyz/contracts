@@ -65,7 +65,9 @@ contract InitTests is BaseCampaignTest {
 
     function testBadBeneficiary() public {
         vm.expectRevert("Invalid beneficiary address");
-        _campaign.initialize(address(0), 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
+        _campaign.initialize(
+            address(0), 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0
+        );
     }
 
     function testPastStart() public {

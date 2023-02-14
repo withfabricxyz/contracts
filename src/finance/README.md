@@ -2,7 +2,6 @@
 
 The CrowdFinancingV1 contract enables groups of people to collectively finance a project with the option of receiving returns on their investment.
 
-
 ### Overview
 
 A minimal contract for accumulating funds from many accounts, transferring the balance

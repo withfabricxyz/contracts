@@ -5,6 +5,7 @@ import "@forge/Test.sol";
 import "@forge/console2.sol";
 import "src/finance/CrowdFinancingV1.sol";
 import "src/tokens/ERC20Token.sol";
+import "./mocks/MockToken.sol";
 import "./BaseCampaignTest.t.sol";
 
 contract ProcessTests is BaseCampaignTest {
@@ -25,6 +26,7 @@ contract ProcessTests is BaseCampaignTest {
         fundAndTransfer();
         assertTrue(CrowdFinancingV1.State.FUNDED == campaign().state());
         assertTrue(campaign().withdrawAllowed());
+        assertEq(3e18, balance(beneficiary));
     }
 
     function testEarlySuccess() public multiTokenTest {
@@ -69,5 +71,39 @@ contract ProcessTests is BaseCampaignTest {
         assertEq(3e18 - 3e16, balance(beneficiary));
         assertEq(3e16, balance(feeCollector));
         assertTrue(campaign().totalSupply() > preSupply);
+    }
+
+    // Coverage of false retrun on free transfer
+    function testProcessFailedFeeTransfer() public erc20Test {
+        MockToken mt = new MockToken("T", "T", 1e21);
+        assignCampaign(createFeeCampaign(address(mt), feeCollector, 100, 100));
+
+        dealAll();
+        deposit(alice, 1e18);
+        deposit(bob, 1e18);
+        deposit(charlie, 1e18);
+        vm.warp(campaign().expiresAt());
+
+        mt.setTransferReturn(false);
+        vm.startPrank(alice);
+        vm.expectRevert("ERC20: Fee transfer failed");
+        campaign().processFunds();
+    }
+
+    // Coverage of false return on transfer
+    function testProcessFailedTransfer() public erc20Test {
+        MockToken mt = new MockToken("T", "T", 1e21);
+        assignCampaign(createCampaign(address(mt)));
+
+        dealAll();
+        deposit(alice, 1e18);
+        deposit(bob, 1e18);
+        deposit(charlie, 1e18);
+        vm.warp(campaign().expiresAt());
+
+        mt.setTransferReturn(false);
+        vm.startPrank(alice);
+        vm.expectRevert("ERC20: Transfer failed");
+        campaign().processFunds();
     }
 }
