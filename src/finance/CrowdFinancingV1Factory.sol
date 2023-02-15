@@ -15,7 +15,7 @@ import "./CrowdFinancingV1.sol";
  */
 contract CrowdFinancingV1Factory is Ownable {
     // The event emitted upon a successful Campaign deployment
-    event Deployment(address indexed deployment);
+    event Deployment(uint64 nonce, address indexed deployment);
 
     // Emitted when the fee collector or schedule changes
     event FeeScheduleChange(address feeCollector, uint16 upfrontBips, uint16 payoutBips);
@@ -45,26 +45,30 @@ contract CrowdFinancingV1Factory is Ownable {
     /**
      * @notice Deploys a new CrowdFinancingV1 contract
      *
+     * @param externalRef An optional reference value emitted in the deploy event for association
      * @param beneficiary the address of the beneficiary, where funds are sent on success
      * @param fundTargetMin the minimum funding amount acceptible for successful financing
      * @param fundTargetMax the maximum funding amount accepted for the financing round
      * @param minDeposit the minimum deposit an account can make in one deposit
      * @param maxDeposit the maximum deposit an account can make in one or more deposits
+     * @param holdOff the number of seconds to wait until the fund starts
      * @param duration the runtime of the campaign, in seconds
      * @param tokenAddr the address of the ERC20 token used for payments, or 0 address for native token
      */
     function deploy(
+        uint64 externalRef,
         address beneficiary,
         uint256 fundTargetMin,
         uint256 fundTargetMax,
         uint256 minDeposit,
         uint256 maxDeposit,
+        uint32 holdOff,
         uint32 duration,
         address tokenAddr
     ) external returns (address) {
         address deployment = Clones.clone(_implementation);
 
-        uint256 startTimestamp = block.timestamp + 10;
+        uint256 startTimestamp = block.timestamp + holdOff;
         uint256 endTimestamp = startTimestamp + duration;
 
         CrowdFinancingV1(deployment).initialize(
@@ -81,7 +85,7 @@ contract CrowdFinancingV1Factory is Ownable {
             _feePayoutBips
         );
 
-        emit Deployment(deployment);
+        emit Deployment(externalRef, deployment);
 
         return deployment;
     }

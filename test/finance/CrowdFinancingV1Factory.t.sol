@@ -11,6 +11,9 @@ contract CrowdFinancingV1FactoryTest is BaseCampaignTest {
     CrowdFinancingV1 internal impl;
     CrowdFinancingV1Factory internal factory;
 
+    event Deployment(uint64 nonce, address indexed deployment);
+    event FeeScheduleChange(address feeCollector, uint16 upfrontBips, uint16 payoutBips);
+
     function setUp() public {
         impl = new CrowdFinancingV1();
         factory = new CrowdFinancingV1Factory(address(impl));
@@ -19,7 +22,11 @@ contract CrowdFinancingV1FactoryTest is BaseCampaignTest {
 
     function testDeployment() public {
         vm.startPrank(alice);
-        address deployment = factory.deploy(beneficiary, 2e18, 5e18, 2e17, 1e18, 60 * 60, address(0));
+        vm.expectEmit(false, false, false, true, address(factory));
+        emit Deployment(1, address(1));
+
+        address deployment = factory.deploy(1, beneficiary, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+        uint256 time = block.timestamp;
 
         CrowdFinancingV1 campaign = CrowdFinancingV1(deployment);
         assertFalse(campaign.withdrawAllowed());
@@ -32,9 +39,15 @@ contract CrowdFinancingV1FactoryTest is BaseCampaignTest {
         assertEq(2e18, campaign.minimumFundTarget());
         assertEq(5e18, campaign.maximumFundTarget());
         assertEq(beneficiary, campaign.beneficiaryAddress());
+
+        assertEq(time, campaign.startsAt());
+        assertEq(time + (60 * 60), campaign.expiresAt());
     }
 
     function testFeeUpdate() public {
+        vm.expectEmit(true, false, false, true, address(factory));
+        emit FeeScheduleChange(address(0xC4c79dAb8F259c7AEE6e5b2aA729821864227E87), 100, 10);
+
         factory.updateFeeSchedule(address(0xC4c79dAb8F259c7AEE6e5b2aA729821864227E87), 100, 10);
 
         (address addr, uint16 upfront, uint16 payout) = factory.feeSchedule();
