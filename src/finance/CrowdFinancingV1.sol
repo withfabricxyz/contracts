@@ -111,7 +111,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
 
     /// @notice Emitted when the funds are transferred to the beneficiary and when
     /// fees are transferred to the fee collector, if specified
-    event Transfer(address indexed account, uint256 numTokens);
+    event TransferDeposits(address indexed account, uint256 numTokens);
 
     /// @notice Emitted on processing if time has elapsed and the target was not met
     event Fail();
@@ -354,7 +354,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
             // If any upfront fee is present, pay that out to the collector now, so the funds
             // are not available for depositors to withdraw
             if (feeAmount > 0) {
-                emit Transfer(_feeCollector, feeAmount);
+                emit TransferDeposits(_feeCollector, feeAmount);
                 if (_erc20) {
                     require(_token.transfer(_feeCollector, feeAmount), "ERC20: Fee transfer failed");
                 } else {
@@ -362,7 +362,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
                 }
             }
 
-            emit Transfer(_beneficiary, transferAmount);
+            emit TransferDeposits(_beneficiary, transferAmount);
             if (_erc20) {
                 require(_token.transfer(_beneficiary, transferAmount), "ERC20: Transfer failed");
             } else {

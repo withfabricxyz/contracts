@@ -22,7 +22,7 @@ contract ProcessTests is BaseCampaignTest {
 
     function testSuccess() public multiTokenTest {
         vm.expectEmit(true, false, false, true, address(campaign()));
-        emit Transfer(beneficiary, 1e18 * 3);
+        emit TransferDeposits(beneficiary, 1e18 * 3);
         fundAndTransfer();
         assertTrue(CrowdFinancingV1.State.FUNDED == campaign().state());
         assertTrue(campaign().withdrawAllowed());
@@ -31,7 +31,7 @@ contract ProcessTests is BaseCampaignTest {
 
     function testEarlySuccess() public multiTokenTest {
         vm.expectEmit(true, false, false, true, address(campaign()));
-        emit Transfer(beneficiary, 1e18 * 5);
+        emit TransferDeposits(beneficiary, 1e18 * 5);
         fundAndTransferEarly();
         assertTrue(CrowdFinancingV1.State.FUNDED == campaign().state());
         assertTrue(campaign().withdrawAllowed());
@@ -47,7 +47,7 @@ contract ProcessTests is BaseCampaignTest {
 
     function testUpfrontFees() public multiTokenFeeTest(100, 0) {
         vm.expectEmit(true, true, false, false, address(campaign()));
-        emit Transfer(feeCollector, 3e16);
+        emit TransferDeposits(feeCollector, 3e16);
 
         fundAndTransfer();
         assertEq(3e18 - 3e16, balance(beneficiary));

@@ -10,7 +10,7 @@ import "@forge/console2.sol";
 
 abstract contract BaseCampaignTest is Test {
     event Deposit(address indexed account, uint256 numTokens);
-    event Transfer(address indexed account, uint256 numTokens);
+    event TransferDeposits(address indexed account, uint256 numTokens);
     event Fail();
 
     modifier prank(address user) {
