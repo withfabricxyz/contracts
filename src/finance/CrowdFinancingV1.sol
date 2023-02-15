@@ -30,14 +30,24 @@ import "@openzeppelin-upgradeable/contracts/security/ReentrancyGuardUpgradeable.
  *
  * Deposits:
  * Accounts deposit tokens by first creating an allowance in the token contract, and then
- * calling the deposit function, which will transfer the entire allowance if all constraints
+ * calling the depositTokens function, which will transfer the tokens if all constraints
  * are satisfied.
  *
+ * For ETH campaigns, a depositer calls depositEth with a given ETH value.
+ *
  * Payouts:
- * The beneficiary makes payments by invoking the makePayment function which works similar to the deposit function.
+ * The beneficiary makes payments by invoking the yieldTokens or yieldEth functions which works
+ * similar to the deposit function.
  *
  * As the payout balance accrues, depositors can invoke the withdraw function to transfer their
  * payout balance.
+ *
+ * ERC20 Compliant
+ *
+ * All deposits are tracked and used to calculate ERC20 total supply. Depositors can transfer
+ * their deposit balance to another account using ERC20 functionality. Transfers of deposit tokens will
+ * also transfer future withdraw capability to the receiver. This allows for account transfer and
+ * makes liquidity possible.
  *
  * Fees:
  * The contract can be initialized with an optional fee collector address with options for two
@@ -49,7 +59,35 @@ import "@openzeppelin-upgradeable/contracts/security/ReentrancyGuardUpgradeable.
  * value commensurate with the fee, and the total deposits is also increased by that amount.
  *
  */
-contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
+contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
+    // Guard to gate ERC20 specific functions
+    modifier erc20Only() {
+        require(_erc20, "erc20 only fn called");
+        _;
+    }
+
+    // Guard to gate ETH specific functions
+    modifier ethOnly() {
+        require(!_erc20, "ETH only fn called");
+        _;
+    }
+
+    // Guard to ensure yields are allowed
+    modifier yieldGuard(uint256 amount) {
+        require(_state == State.FUNDED, "Cannot accept payment");
+        require(amount > 0, "Amount is 0");
+        _;
+    }
+
+    // Guard to ensure deposits are allowed
+    modifier depositGuard(uint256 amount) {
+        require(depositAllowed(), "Deposits are not allowed");
+        uint256 total = _deposits[msg.sender] + amount;
+        require(total >= _minDeposit, "Deposit amount is too low");
+        require(total <= _maxDeposit, "Deposit amount is too high");
+        _;
+    }
+
     // Max campaign duration: 90 Days
     uint256 private constant MAX_DURATION_SECONDS = 7776000;
 
@@ -60,10 +98,10 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
     uint256 private constant PAST_START_TOLERANCE_SECONDS = 60;
 
     // Maximum fee basis points
-    uint256 private constant MAX_FEE_BIPS = 2500;
+    uint16 private constant MAX_FEE_BIPS = 2500;
 
     // Maximum basis points
-    uint256 private constant MAX_BIPS = 10_000;
+    uint16 private constant MAX_BIPS = 10_000;
 
     /// @notice Emitted when an account deposits funds to the contract
     event Deposit(address indexed account, uint256 numTokens);
@@ -128,6 +166,9 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
     // The mapping from account to what that account has withdrawn
     mapping(address => uint256) private _withdraws;
 
+    // ERC20 allowances
+    mapping(address => mapping(address => uint256)) private _allowances;
+
     // Fee related items
 
     // The optional address of the fee collector
@@ -135,14 +176,17 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
 
     // The fee in basis points, transferred to the fee collector when
     // processing a successful raise
-    uint256 private _feeUpfrontBips;
+    uint16 private _feeUpfrontBips;
 
     // The fee in basis points, used to dilute the cap table when
     // processing a succesful raise
-    uint256 private _feePayoutBips;
+    uint16 private _feePayoutBips;
 
     // Track the number of tokens sent via makePayment
     uint256 private _payoutTotal;
+
+    // Flag indicating the contract works with ERC20 tokens rather than eth
+    bool private _erc20;
 
     /// @notice This contract is intended for use with proxies, so we prevent direct
     /// initialization. This contract will fail to function properly without a proxy
@@ -160,8 +204,8 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
      * @param maxDeposit the maximum deposit an account can make in one or more deposits
      * @param startTimestamp the UNIX time in seconds denoting when deposits can start
      * @param endTimestamp the UNIX time in seconds denoting when deposits are no longer allowed
-     * @param tokenAddr the address of the ERC20 token used for payments
-     * @param feeCollector the address of the fee collector, or the 0 address if no fees are collected
+     * @param tokenAddr the address of the ERC20 token used for payments, or 0 address for native token (ETH)
+     * @param feeCollectorAddr the address of the fee collector, or the 0 address if no fees are collected
      * @param feeUpfrontBips the upfront fee in basis points, calculated during processing
      * @param feePayoutBips the payout fee in basis points. Dilutes the cap table for fee collection
      */
@@ -174,12 +218,11 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
         uint256 startTimestamp,
         uint256 endTimestamp,
         address tokenAddr,
-        address feeCollector,
-        uint256 feeUpfrontBips,
-        uint256 feePayoutBips
+        address feeCollectorAddr,
+        uint16 feeUpfrontBips,
+        uint16 feePayoutBips
     ) external initializer {
         require(beneficiary != address(0), "Invalid beneficiary address");
-        require(tokenAddr != address(0), "Invalid token address");
         require(startTimestamp + PAST_START_TOLERANCE_SECONDS >= block.timestamp, "Invalid start time");
         require(startTimestamp + MIN_DURATION_SECONDS <= endTimestamp, "Invalid time range");
         require(
@@ -194,7 +237,7 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
         require(feeUpfrontBips <= MAX_FEE_BIPS, "Upfront fee too high");
         require(feePayoutBips <= MAX_FEE_BIPS, "Payout fee too high");
 
-        if (feeCollector != address(0)) {
+        if (feeCollectorAddr != address(0)) {
             require(feeUpfrontBips > 0 || feePayoutBips > 0, "Fees required when fee collector is present");
         } else {
             require(feeUpfrontBips == 0 && feePayoutBips == 0, "Fees must be 0 when there is no fee collector");
@@ -208,8 +251,9 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
         _startTimestamp = startTimestamp;
         _expirationTimestamp = endTimestamp;
         _token = IERC20(tokenAddr);
+        _erc20 = tokenAddr != address(0);
 
-        _feeCollector = feeCollector;
+        _feeCollector = feeCollectorAddr;
         _feeUpfrontBips = feeUpfrontBips;
         _feePayoutBips = feePayoutBips;
 
@@ -238,17 +282,18 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
      * - state must equal FUNDING
      * - `amount` must be <= token allowance for the contract
      */
-    function deposit(uint256 amount) external nonReentrant {
-        require(depositAllowed(), "Deposits are not allowed");
-        address account = msg.sender;
-        uint256 total = _deposits[account] + amount;
-        require(total >= _minDeposit, "Deposit amount is too low");
-        require(total <= _maxDeposit, "Deposit amount is too high");
+    function depositTokens(uint256 amount) external erc20Only depositGuard(amount) nonReentrant {
+        _addDeposit(msg.sender, _transferSafe(msg.sender, amount));
+    }
 
-        uint256 actual = _transferSafe(msg.sender, amount);
-        _deposits[account] += actual;
-        _depositTotal += actual;
-        emit Deposit(account, actual);
+    function depositEth() external payable ethOnly depositGuard(msg.value) {
+        _addDeposit(msg.sender, msg.value);
+    }
+
+    function _addDeposit(address account, uint256 amount) private {
+        _deposits[account] += amount;
+        _depositTotal += amount;
+        emit Deposit(account, amount);
     }
 
     /**
@@ -310,11 +355,19 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
             // are not available for depositors to withdraw
             if (feeAmount > 0) {
                 emit Transfer(_feeCollector, feeAmount);
-                require(_token.transfer(_feeCollector, feeAmount), "ERC20 Fee transfer failed");
+                if (_erc20) {
+                    require(_token.transfer(_feeCollector, feeAmount), "ERC20: Fee transfer failed");
+                } else {
+                    payable(_feeCollector).transfer(feeAmount);
+                }
             }
 
             emit Transfer(_beneficiary, transferAmount);
-            require(_token.transfer(_beneficiary, transferAmount), "ERC20 transfer failed");
+            if (_erc20) {
+                require(_token.transfer(_beneficiary, transferAmount), "ERC20: Transfer failed");
+            } else {
+                payable(_beneficiary).transfer(transferAmount);
+            }
         } else {
             _state = State.FAILED;
             emit Fail();
@@ -372,12 +425,20 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
      *
      * Emits a {Payout} event.
      */
-    function makePayment(uint256 amount) external nonReentrant {
-        require(_state == State.FUNDED, "Cannot accept payment");
-        require(amount > 0, "Amount is 0");
-        uint256 actual = _transferSafe(msg.sender, amount);
-        emit Payout(msg.sender, actual);
-        _payoutTotal += actual;
+    function yieldTokens(uint256 amount) external erc20Only yieldGuard(amount) nonReentrant {
+        _addPayout(msg.sender, _transferSafe(msg.sender, amount));
+    }
+
+    /**
+     * Yield ETH to depositors pro-rata
+     */
+    function yieldEth() external payable ethOnly yieldGuard(msg.value) nonReentrant {
+        _addPayout(msg.sender, msg.value);
+    }
+
+    function _addPayout(address from, uint256 amount) private {
+        emit Payout(from, amount);
+        _payoutTotal += amount;
     }
 
     /**
@@ -400,13 +461,16 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
      * @return true if the contract allows withdraws
      */
     function withdrawAllowed() public view returns (bool) {
-        return state() == State.FUNDED || state() == State.FAILED;
+        return state() == State.FUNDED || state() == State.FAILED || (expired() && !fundTargetMet());
     }
 
     /**
      * @return The total amount of tokens paid back to a given depositor
      */
     function payoutsMadeTo(address account) private view returns (uint256) {
+        if (_depositTotal == 0) {
+            return 0;
+        }
         return (_deposits[account] * payoutTotal()) / _depositTotal;
     }
 
@@ -440,10 +504,17 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
      */
     function withdraw() external {
         require(withdrawAllowed(), "Withdraw not allowed");
+
+        // Set the state to failed
+        if (expired() && state() == State.FUNDING && !fundTargetMet()) {
+            _state = State.FAILED;
+            emit Fail();
+        }
+
         address account = msg.sender;
         if (state() == State.FUNDED) {
             withdrawPayout(account);
-        } else if (state() == State.FAILED) {
+        } else {
             withdrawDeposit(account);
         }
     }
@@ -456,7 +527,12 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
         require(amount > 0, "No balance");
         _deposits[account] = 0;
         emit Withdraw(account, amount);
-        require(_token.transfer(msg.sender, amount), "ERC20 transfer failed");
+
+        if (_erc20) {
+            require(_token.transfer(account, amount), "ERC20 transfer failed");
+        } else {
+            payable(account).transfer(amount);
+        }
     }
 
     /**
@@ -468,7 +544,12 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
         _withdraws[account] += amount;
         _withdrawTotal += amount;
         emit Withdraw(account, amount);
-        require(_token.transfer(msg.sender, amount), "ERC20 transfer failed");
+
+        if (_erc20) {
+            require(_token.transfer(account, amount), "ERC20 transfer failed");
+        } else {
+            payable(account).transfer(amount);
+        }
     }
 
     ///////////////////////////////////////////
@@ -492,6 +573,161 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
         uint256 postBalance = _token.balanceOf(address(this));
         return postBalance - priorBalance;
     }
+
+    ///////////////////////////////////////////
+    // IERC20 Implementation
+    ///////////////////////////////////////////
+
+    /**
+     * @dev Returns the amount of tokens in existence.
+     */
+    function totalSupply() external view returns (uint256) {
+        return _depositTotal;
+    }
+
+    /**
+     * @dev Returns the amount of tokens owned by `account`.
+     */
+    function balanceOf(address account) external view returns (uint256) {
+        return _deposits[account];
+    }
+
+    /**
+     * @dev Moves `amount` tokens from the caller's account to `to`.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * Emits a {Transfer} event.
+     */
+    function transfer(address to, uint256 amount) external returns (bool) {
+        _transfer(msg.sender, to, amount);
+        return true;
+    }
+
+    /**
+     * @dev Moves `amount` of tokens from `from` to `to`.
+     *
+     * Emits a {Transfer} event.
+     *
+     * Requirements:
+     *
+     * - `from` cannot be the zero address.
+     * - `to` cannot be the zero address.
+     * - `from` must have a balance of at least `amount`.
+     */
+    function _transfer(address from, address to, uint256 amount) internal virtual {
+        require(from != address(0), "ERC20: transfer from the zero address");
+        require(to != address(0), "ERC20: transfer to the zero address");
+
+        uint256 fromBalance = _deposits[from];
+        require(fromBalance >= amount, "ERC20: transfer amount exceeds balance");
+        unchecked {
+            _deposits[from] = fromBalance - amount;
+            // Overflow not possible: the sum of all balances is capped by totalSupply, and the sum is preserved by
+            // decrementing then incrementing.
+            _deposits[to] += amount;
+        }
+
+        // Transfer partial withdraws to balance payouts
+        if (_state == State.FUNDED) {
+            uint256 fromWithdraws = _withdraws[from];
+            uint256 withdrawAmount = ((fromBalance - amount) * fromWithdraws) / fromBalance;
+            unchecked {
+                _withdraws[from] = fromWithdraws - withdrawAmount;
+                _withdraws[to] += withdrawAmount;
+            }
+        }
+
+        emit Transfer(from, to, amount);
+    }
+
+    /**
+     * @dev Returns the remaining number of tokens that `spender` will be
+     * allowed to spend on behalf of `owner` through {transferFrom}. This is
+     * zero by default.
+     *
+     * This value changes when {approve} or {transferFrom} are called.
+     */
+    function allowance(address owner, address spender) public view returns (uint256) {
+        return _allowances[owner][spender];
+    }
+
+    /**
+     * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * IMPORTANT: Beware that changing an allowance with this method brings the risk
+     * that someone may use both the old and the new allowance by unfortunate
+     * transaction ordering. One possible solution to mitigate this race
+     * condition is to first reduce the spender's allowance to 0 and set the
+     * desired value afterwards:
+     * https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
+     *
+     * Emits an {Approval} event.
+     */
+    function approve(address spender, uint256 amount) external returns (bool) {
+        _approve(msg.sender, spender, amount);
+        return true;
+    }
+
+    /**
+     * @dev Updates `owner` s allowance for `spender` based on spent `amount`.
+     *
+     * Does not update the allowance amount in case of infinite allowance.
+     * Revert if not enough allowance is available.
+     *
+     * Might emit an {Approval} event.
+     */
+    function _spendAllowance(address owner, address spender, uint256 amount) internal virtual {
+        uint256 currentAllowance = allowance(owner, spender);
+        if (currentAllowance != type(uint256).max) {
+            require(currentAllowance >= amount, "ERC20: insufficient allowance");
+            unchecked {
+                _approve(owner, spender, currentAllowance - amount);
+            }
+        }
+    }
+
+    /**
+     * @dev Sets `amount` as the allowance of `spender` over the `owner` s tokens.
+     *
+     * This internal function is equivalent to `approve`, and can be used to
+     * e.g. set automatic allowances for certain subsystems, etc.
+     *
+     * Emits an {Approval} event.
+     *
+     * Requirements:
+     *
+     * - `owner` cannot be the zero address.
+     * - `spender` cannot be the zero address.
+     */
+    function _approve(address owner, address spender, uint256 amount) internal virtual {
+        require(owner != address(0), "ERC20: approve from the zero address");
+        require(spender != address(0), "ERC20: approve to the zero address");
+        _allowances[owner][spender] = amount;
+        emit Approval(owner, spender, amount);
+    }
+
+    /**
+     * @dev Moves `amount` tokens from `from` to `to` using the
+     * allowance mechanism. `amount` is then deducted from the caller's
+     * allowance.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * Emits a {Transfer} event.
+     */
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        address spender = msg.sender;
+        _spendAllowance(from, spender, amount);
+        _transfer(from, to, amount);
+        return true;
+    }
+
+    ///////////////////////////////////////////
+    // Public/External Views
+    ///////////////////////////////////////////
 
     /**
      * @return The current state of financing
@@ -550,6 +786,13 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
     }
 
     /**
+     * @return true if the contract is ERC20 denominated
+     */
+    function erc20Denominated() public view returns (bool) {
+        return _erc20;
+    }
+
+    /**
      * @return the address of the token
      */
     function tokenAddress() external view returns (address) {
@@ -560,7 +803,7 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
      * @return the current token balance of the contract
      */
     function tokenBalance() public view returns (uint256) {
-        return IERC20(_token).balanceOf(address(this));
+        return _token.balanceOf(address(this));
     }
 
     /**
@@ -575,5 +818,26 @@ contract ERC20CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable {
      */
     function maximumFundTarget() external view returns (uint256) {
         return _fundTargetMax;
+    }
+
+    /**
+     * @return the upfront fee BIPs
+     */
+    function upfrontFeeBips() external view returns (uint16) {
+        return _feeUpfrontBips;
+    }
+
+    /**
+     * @return the payout fee BIPs
+     */
+    function payoutFeeBips() external view returns (uint16) {
+        return _feePayoutBips;
+    }
+
+    /**
+     * @return the fee collector address
+     */
+    function feeCollector() external view returns (address) {
+        return _feeCollector;
     }
 }
