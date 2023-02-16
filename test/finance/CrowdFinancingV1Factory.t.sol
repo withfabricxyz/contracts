@@ -8,6 +8,11 @@ import "src/finance/CrowdFinancingV1.sol";
 import "src/finance/CrowdFinancingV1Factory.sol";
 
 contract CrowdFinancingV1FactoryTest is BaseCampaignTest {
+    event Deployment(address indexed deployment);
+    event FeeScheduleChange(address feeCollector, uint16 upfrontBips, uint16 payoutBips, uint256 deployFee);
+    event DeployFeeChange(uint256 fee);
+    event DeployFeeTransfer(address indexed recipient, uint256 fee);
+
     CrowdFinancingV1 internal impl;
     CrowdFinancingV1Factory internal factory;
 
@@ -45,18 +50,77 @@ contract CrowdFinancingV1FactoryTest is BaseCampaignTest {
     }
 
     function testFeeUpdate() public {
-        vm.expectEmit(true, false, false, true, address(factory));
+        vm.expectEmit(true, true, true, true, address(factory));
         emit FeeScheduleChange(address(0xC4c79dAb8F259c7AEE6e5b2aA729821864227E87), 100, 10);
-
         factory.updateFeeSchedule(address(0xC4c79dAb8F259c7AEE6e5b2aA729821864227E87), 100, 10);
 
-        (address addr, uint16 upfront, uint16 payout) = factory.feeSchedule();
+        (address addr, uint16 upfront, uint16 payout, uint256 deploy) = factory.feeSchedule();
         assertEq(address(0xC4c79dAb8F259c7AEE6e5b2aA729821864227E87), addr);
         assertEq(100, upfront);
         assertEq(10, payout);
+        assertEq(0, deploy);
 
         vm.startPrank(alice);
         vm.expectRevert("Ownable: caller is not the owner");
         factory.updateFeeSchedule(address(alice), 100, 100);
+    }
+
+    function testDeployFeeUpdate() public {
+        vm.expectEmit(true, true, true, true, address(factory));
+        emit DeployFeeChange(1e12);
+        factory.updateMinimumDeployFee(1e12);
+
+        (address addr, uint16 upfront, uint16 payout, uint256 deploy) = factory.feeSchedule();
+        assertEq(address(0), addr);
+        assertEq(0, upfront);
+        assertEq(0, payout);
+        assertEq(1e12, deploy);
+
+        vm.startPrank(alice);
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.updateMinimumDeployFee(1e12);
+    }
+
+    function testDeployFeeTooLow() public {
+        factory.updateMinimumDeployFee(1e12);
+        vm.expectRevert("Insuffient ETH to deploy");
+        factory.deploy(1, beneficiary, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+    }
+
+    function testDeployFeeCollectNone() public {
+        vm.expectRevert("No fees to collect");
+        factory.transferDeployFees(alice);
+    }
+
+    function testDeployFeeCapture() public {
+        factory.updateMinimumDeployFee(1e12);
+        factory.deploy{value: 1e12}(1, beneficiary, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+        assertEq(1e12, address(factory).balance);
+    }
+
+    function testDeployFeeTransfer() public {
+        factory.updateMinimumDeployFee(1e12);
+        factory.deploy{value: 1e12}(1, beneficiary, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+        vm.expectEmit(true, true, true, true, address(factory));
+        emit DeployFeeTransfer(alice, 1e12);
+        uint256 beforeBalance = alice.balance;
+        factory.transferDeployFees(alice);
+        assertEq(beforeBalance + 1e12, alice.balance);
+        assertEq(0, address(factory).balance);
+    }
+
+    function testDeployFeeTransferNonOwner() public {
+        factory.updateMinimumDeployFee(1e12);
+        factory.deploy{value: 1e12}(1, beneficiary, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+        vm.startPrank(alice);
+        vm.expectRevert("Ownable: caller is not the owner");
+        factory.transferDeployFees(alice);
+    }
+
+    function testDeployFeeTransferBadReceiver() public {
+        factory.updateMinimumDeployFee(1e12);
+        factory.deploy{value: 1e12}(1, beneficiary, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+        vm.expectRevert("Failed to transfer Ether");
+        factory.transferDeployFees(address(this));
     }
 }

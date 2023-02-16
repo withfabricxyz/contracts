@@ -14,11 +14,22 @@ import "./CrowdFinancingV1.sol";
  *
  */
 contract CrowdFinancingV1Factory is Ownable {
+    modifier feeRequired() {
+        require(msg.value >= _feeDeployMin, "Insuffient ETH to deploy");
+        _;
+    }
+
     // The event emitted upon a successful Campaign deployment
     event Deployment(uint64 nonce, address indexed deployment);
 
     // Emitted when the fee collector or schedule changes
     event FeeScheduleChange(address feeCollector, uint16 upfrontBips, uint16 payoutBips);
+
+    // Emitted when the creation fee minium changes
+    event DeployFeeChange(uint256 fee);
+
+    // Emitted when the deploy fees are collected by the owner
+    event DeployFeeTransfer(address indexed recipient, uint256 fee);
 
     // The contract implementation address
     address immutable _implementation;
@@ -32,6 +43,9 @@ contract CrowdFinancingV1Factory is Ownable {
     // The payout fee (See CrowdFinancingV1)
     uint16 private _feePayoutBips;
 
+    // Fee to collect upon creation
+    uint256 private _feeDeployMin;
+
     /**
      * @param implementation the CrowdFinancingV1 implementation address
      */
@@ -40,6 +54,7 @@ contract CrowdFinancingV1Factory is Ownable {
         _feeCollector = address(0);
         _feeUpfrontBips = 0;
         _feePayoutBips = 0;
+        _feeDeployMin = 0;
     }
 
     /**
@@ -65,7 +80,7 @@ contract CrowdFinancingV1Factory is Ownable {
         uint32 holdOff,
         uint32 duration,
         address tokenAddr
-    ) external returns (address) {
+    ) external payable feeRequired returns (address) {
         address deployment = Clones.clone(_implementation);
 
         uint256 startTimestamp = block.timestamp + holdOff;
@@ -91,6 +106,17 @@ contract CrowdFinancingV1Factory is Ownable {
     }
 
     /**
+     * Owner Only: Transfer accumulated fees
+     */
+    function transferDeployFees(address recipient) external onlyOwner {
+        uint256 amount = address(this).balance;
+        require(amount > 0, "No fees to collect");
+        emit DeployFeeTransfer(recipient, amount);
+        (bool sent,) = payable(recipient).call{value: amount}("");
+        require(sent, "Failed to transfer Ether");
+    }
+
+    /**
      * Update the fee schedule for future deployments
      *
      * @param feeCollector the address of the fee collector, or the 0 address if no fees are collected
@@ -104,7 +130,20 @@ contract CrowdFinancingV1Factory is Ownable {
         emit FeeScheduleChange(feeCollector, feeUpfrontBips, feePayoutBips);
     }
 
-    function feeSchedule() external view returns (address, uint16, uint16) {
-        return (_feeCollector, _feeUpfrontBips, _feePayoutBips);
+    /**
+     * Update the deploy fee.
+     *
+     * @param minFeeAmount the amount of wei required to deploy a campaign
+     */
+    function updateMinimumDeployFee(uint256 minFeeAmount) external onlyOwner {
+        _feeDeployMin = minFeeAmount;
+        emit DeployFeeChange(minFeeAmount);
+    }
+
+    /**
+     * Fetch the fee schedule for campaigns and the deploy fee
+     */
+    function feeSchedule() external view returns (address, uint16, uint16, uint256) {
+        return (_feeCollector, _feeUpfrontBips, _feePayoutBips, _feeDeployMin);
     }
 }
