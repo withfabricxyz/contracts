@@ -12,19 +12,19 @@ contract YieldTests is BaseCampaignTest {
         fundAndTransfer();
         yield(1e18);
         uint256 dBalance = balance(alice);
-        uint256 pBalance = campaign().payoutBalance(alice);
+        uint256 pBalance = campaign().yieldBalanceOf(alice);
         assertEq(333333333333333333, pBalance);
         withdraw(alice);
         assertEq(pBalance, balance(alice) - dBalance);
-        assertEq(0, campaign().payoutBalance(alice));
+        assertEq(0, campaign().yieldBalanceOf(alice));
     }
 
     function testProfit() public multiTokenTest {
         fundAndTransfer();
-        dealDenomination(beneficiary, 1e20);
+        dealDenomination(recipient, 1e20);
         yield(1e19);
-        assertEq(3333333333333333333, campaign().payoutBalance(alice));
-        assertEq(3333333333333333333 - 1e18, campaign().returnOnInvestment(alice));
+        assertEq(3333333333333333333, campaign().yieldBalanceOf(alice));
+        assertEq(3333333333333333333 - 1e18, campaign().yieldTotalOf(alice));
     }
 
     function testMulti() public multiTokenTest {
@@ -36,9 +36,9 @@ contract YieldTests is BaseCampaignTest {
         yield(1e18);
         withdraw(alice);
 
-        assertEq(2e18, campaign().payoutTotal());
+        assertEq(2e18, campaign().yieldTotal());
         assertEq(666666666666666666, balance(alice) - dBalance);
-        assertEq(0, campaign().payoutBalance(alice));
-        assertEq(666666666666666666, campaign().payoutBalance(bob));
+        assertEq(0, campaign().yieldBalanceOf(alice));
+        assertEq(666666666666666666, campaign().yieldBalanceOf(bob));
     }
 }

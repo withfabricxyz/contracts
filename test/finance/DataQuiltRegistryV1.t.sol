@@ -21,15 +21,15 @@ contract DataQuiltRegistryV1Test is BaseCampaignTest {
     }
 
     function testInvalidAddress() public {
-        uint256 id = generateId(beneficiary, uint32(0xff));
+        uint256 id = generateId(recipient, uint32(0xff));
         vm.expectRevert();
-        registry.mintContributionToken(id);
+        registry.mint(id);
     }
 
     function testMintWithoutDeposits() public ethTest {
         uint256 id = generateId(address(campaign()), uint32(0xff));
         vm.expectRevert("Err: already minted or deposits not found");
-        registry.mintContributionToken(id);
+        registry.mint(id);
     }
 
     function testMintWithDeposits() public ethTest {
@@ -38,7 +38,7 @@ contract DataQuiltRegistryV1Test is BaseCampaignTest {
         deposit(alice, 1e18);
         vm.startPrank(alice);
         assert(registry.canMint(address(campaign())));
-        registry.mintContributionToken(id);
+        registry.mint(id);
 
         assertEq(1, registry.balanceOf(alice));
         assertEq(
@@ -48,8 +48,8 @@ contract DataQuiltRegistryV1Test is BaseCampaignTest {
 
         assert(!registry.canMint(address(campaign())));
         vm.expectRevert("Err: already minted or deposits not found");
-        registry.mintContributionToken(id);
+        registry.mint(id);
         vm.expectRevert("Err: already minted or deposits not found");
-        registry.mintContributionToken(id + 1);
+        registry.mint(id + 1);
     }
 }

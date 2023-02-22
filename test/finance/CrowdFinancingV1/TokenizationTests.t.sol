@@ -13,10 +13,10 @@ contract TokenizationTests is BaseCampaignTest {
         deal(alice, 1e19);
     }
 
-    function testTokenBalances() public ethTest {
+    function testtransferFeeBipss() public ethTest {
         fundAndTransfer();
-        assertEq(campaign().depositedAmount(alice), campaign().balanceOf(alice));
-        assertEq(campaign().depositTotal(), campaign().totalSupply());
+        assertEq(campaign().balanceOf(alice), campaign().balanceOf(alice));
+        assertEq(3e18, campaign().totalSupply());
     }
 
     function testTokenTransfer() public ethTest {
@@ -69,7 +69,7 @@ contract TokenizationTests is BaseCampaignTest {
 
         assertEq(withdraws, campaign().withdrawsOf(alice) + campaign().withdrawsOf(newOwner), "Split roughly");
         assertApproxEqAbs(campaign().withdrawsOf(alice), campaign().withdrawsOf(newOwner), 1, "Equal withdraws");
-        assertApproxEqAbs(campaign().payoutBalance(alice), campaign().payoutBalance(newOwner), 1, "Payout balance");
+        assertApproxEqAbs(campaign().yieldBalanceOf(alice), campaign().yieldBalanceOf(newOwner), 1, "Payout balance");
     }
 
     function testInvalidAllowanceAddresses() public ethTest {

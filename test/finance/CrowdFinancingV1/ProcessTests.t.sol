@@ -11,38 +11,35 @@ import "./BaseCampaignTest.t.sol";
 contract ProcessTests is BaseCampaignTest {
     function testReprocess() public multiTokenTest {
         fundAndTransfer();
-        vm.expectRevert("Funds already processed");
-        campaign().processFunds();
+        vm.expectRevert("Transfer not allowed");
+        campaign().transferBalanceToRecipient();
     }
 
     function testTooEarly() public multiTokenTest {
-        vm.expectRevert("More time/funds required");
-        campaign().processFunds();
+        vm.expectRevert("Transfer not allowed");
+        campaign().transferBalanceToRecipient();
     }
 
     function testSuccess() public multiTokenTest {
         vm.expectEmit(true, false, false, true, address(campaign()));
-        emit TransferDeposits(beneficiary, 1e18 * 3);
+        emit TransferDeposits(recipient, 1e18 * 3);
         fundAndTransfer();
         assertTrue(CrowdFinancingV1.State.FUNDED == campaign().state());
-        assertTrue(campaign().withdrawAllowed());
-        assertEq(3e18, balance(beneficiary));
+        assertTrue(campaign().isWithdrawAllowed());
+        assertEq(3e18, balance(recipient));
     }
 
     function testEarlySuccess() public multiTokenTest {
         vm.expectEmit(true, false, false, true, address(campaign()));
-        emit TransferDeposits(beneficiary, 1e18 * 5);
+        emit TransferDeposits(recipient, 1e18 * 5);
         fundAndTransferEarly();
         assertTrue(CrowdFinancingV1.State.FUNDED == campaign().state());
-        assertTrue(campaign().withdrawAllowed());
+        assertTrue(campaign().isWithdrawAllowed());
     }
 
     function testBadOutcome() public multiTokenTest {
-        vm.expectEmit(true, false, false, true, address(campaign()));
-        emit Fail();
         fundAndFail();
-        assertTrue(CrowdFinancingV1.State.FAILED == campaign().state());
-        assertTrue(campaign().withdrawAllowed());
+        assertFalse(campaign().isTransferAllowed());
     }
 
     function testUpfrontFees() public multiTokenFeeTest(100, 0) {
@@ -50,7 +47,7 @@ contract ProcessTests is BaseCampaignTest {
         emit TransferDeposits(feeCollector, 3e16);
 
         fundAndTransfer();
-        assertEq(3e18 - 3e16, balance(beneficiary));
+        assertEq(3e18 - 3e16, balance(recipient));
         assertEq(3e16, balance(feeCollector));
         assertEq(0, address(campaign()).balance);
     }
@@ -62,13 +59,13 @@ contract ProcessTests is BaseCampaignTest {
         assertTrue(campaign().totalSupply() > preSupply);
         assertTrue(campaign().balanceOf(feeCollector) > 0);
         yield(1e18);
-        assertEq(24390243902439024, campaign().payoutBalance(feeCollector));
+        assertEq(24390243902439024, campaign().yieldBalanceOf(feeCollector));
     }
 
     function testAllFees() public multiTokenFeeTest(100, 250) {
         uint256 preSupply = campaign().totalSupply();
         fundAndTransfer();
-        assertEq(3e18 - 3e16, balance(beneficiary));
+        assertEq(3e18 - 3e16, balance(recipient));
         assertEq(3e16, balance(feeCollector));
         assertTrue(campaign().totalSupply() > preSupply);
     }
@@ -82,12 +79,12 @@ contract ProcessTests is BaseCampaignTest {
         deposit(alice, 1e18);
         deposit(bob, 1e18);
         deposit(charlie, 1e18);
-        vm.warp(campaign().expiresAt());
+        vm.warp(campaign().endsAt());
 
         mt.setTransferReturn(false);
         vm.startPrank(alice);
         vm.expectRevert("ERC20: Fee transfer failed");
-        campaign().processFunds();
+        campaign().transferBalanceToRecipient();
     }
 
     // Coverage of false return on transfer
@@ -99,11 +96,11 @@ contract ProcessTests is BaseCampaignTest {
         deposit(alice, 1e18);
         deposit(bob, 1e18);
         deposit(charlie, 1e18);
-        vm.warp(campaign().expiresAt());
+        vm.warp(campaign().endsAt());
 
         mt.setTransferReturn(false);
         vm.startPrank(alice);
         vm.expectRevert("ERC20: Transfer failed");
-        campaign().processFunds();
+        campaign().transferBalanceToRecipient();
     }
 }

@@ -5,11 +5,11 @@ The CrowdFinancingV1 contract enables groups of people to collectively finance a
 ### Overview
 
 A minimal contract for accumulating funds from many accounts, transferring the balance
-to a beneficiary, and allocating payouts to depositors as the beneficiary returns funds.
+to a recipient, and allocating payouts to depositors as the recipient returns funds.
 
-The primary purpose of this contract is financing a trusted beneficiary with the expectation of ROI.
+The primary purpose of this contract is financing a trusted recipient with the expectation of ROI.
 If the fund target is met within the fund raising window, then processing the funds will transfer all
-raised funds to the beneficiary, minus optional fee, and change the state of the contract to allow for payouts to occur.
+raised funds to the recipient, minus optional fee, and change the state of the contract to allow for payouts to occur.
 
 If the fund target is not met in the fund raise window, the raise fails, and all depositors can
 withdraw their initial investment.
@@ -17,15 +17,15 @@ withdraw their initial investment.
 #### Deposits
 
 Accounts deposit tokens by first creating an allowance in the token contract, and then
-calling the depositTokens function, which will transfer the entire allowance if all contraints
+calling the contributeERC20 function, which will transfer the entire allowance if all contraints
 are satisfied.
 
-For ETH campaigns, accounts call the depositEth function with the transaction value message
+For ETH campaigns, accounts call the contributeEth function with the transaction value message
 set to the amount of eth to transfer.
 
 #### Payouts
 
-The beneficiary makes payments by transfering tokens to the contract, or invoking the yieldTokens
+The recipient makes payments by transfering tokens to the contract, or invoking the yieldERC20
 or yieldEth function which works similar to the deposit functions.
 
 As the payout balance accrues, depositors can invoke the withdraw function to transfer their
@@ -37,7 +37,7 @@ The contract can be initialized with an optional fee collector address with opti
 kinds of fees, in basis points. A value of 250 would mean 2.5%.
 
 Type A Fee: Upon processing, a percentage of the total deposit amount is carved out and sent
-to the fee collector. The remaining balance is sent to the beneficiary.
+to the fee collector. The remaining balance is sent to the recipient.
 Type B Fee: Upon processing, the fee collector is added to the cap table as a depositor with a
 value commensurate with the fee, and the total deposits is also increased by that amount.
 
@@ -54,11 +54,11 @@ flowchart TD
     TRANSFER -- Fee Payout BPS --> FEE[Fee Collector]
     TRANSFER -- Allocate Payout --> FEE
     TRANSFER -- Mark Funded --> FUNDED[Contract: Funded]
-    TRANSFER -- Transfer Funds --> BENEFICIARY[Beneficiary]
+    TRANSFER -- Transfer Funds --> recipient[recipient]
     ACCOUNT -- Withdraw Investment --> FAIL
     ACCOUNT -- Withdraw Payout --> FUNDED
-    BENEFICIARY -- Transfer Payout --> FUNDED
-    BENEFICIARY -- Generates Value --> BENEFICIARY
+    recipient -- Transfer Payout --> FUNDED
+    recipient -- Generates Value --> recipient
 ```
 
 ### Deployment
@@ -70,13 +70,13 @@ and initialize it with specified parameters.
 
 ```solidity
 CrowdFinancingV1 campaign = CrowdFinancingV1Factory(address).deploy(
-  address beneficiary,
-  uint256 fundTargetMin,
-  uint256 fundTargetMax,
-  uint256 minDeposit,
-  uint256 maxDeposit,
+  address recipient,
+  uint256 minGoal,
+  uint256 maxGoal,
+  uint256 minContribution,
+  uint256 maxContribution,
   uint32 duration,
-  address tokenAddr
+  address erc20TokenAddr
 );
 ```
 
