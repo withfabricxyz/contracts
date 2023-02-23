@@ -1,5 +1,6 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+
+pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts/proxy/Clones.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -8,14 +9,14 @@ import "./CrowdFinancingV1.sol";
 /**
  *
  * @title Fabric Crowd Financing Factory Contract
- * @author Dan Simpson
+ * @author Fabric Inc.
  *
- * A simple factory which leverages Clones to deploy new campaigns
+ * A factory which leverages Clones to deploy campaigns.
  *
  */
 contract CrowdFinancingV1Factory is Ownable {
     modifier feeRequired() {
-        require(msg.value >= _feeDeployMin, "Insuffient ETH to deploy");
+        require(msg.value >= _feeDeployMin, "Insufficient ETH to deploy");
         _;
     }
 
@@ -38,10 +39,10 @@ contract CrowdFinancingV1Factory is Ownable {
     address private _feeCollector;
 
     // The upfront fee (See CrowdFinancingV1)
-    uint16 private _feeUpfrontBips;
+    uint16 private _feeTransferBips;
 
     // The payout fee (See CrowdFinancingV1)
-    uint16 private _feePayoutBips;
+    uint16 private _feeYieldBips;
 
     // Fee to collect upon creation
     uint256 private _feeDeployMin;
@@ -52,8 +53,8 @@ contract CrowdFinancingV1Factory is Ownable {
     constructor(address implementation) Ownable() {
         _implementation = implementation;
         _feeCollector = address(0);
-        _feeUpfrontBips = 0;
-        _feePayoutBips = 0;
+        _feeTransferBips = 0;
+        _feeYieldBips = 0;
         _feeDeployMin = 0;
     }
 
@@ -61,25 +62,25 @@ contract CrowdFinancingV1Factory is Ownable {
      * @notice Deploys a new CrowdFinancingV1 contract
      *
      * @param externalRef An optional reference value emitted in the deploy event for association
-     * @param beneficiary the address of the beneficiary, where funds are sent on success
-     * @param fundTargetMin the minimum funding amount acceptible for successful financing
-     * @param fundTargetMax the maximum funding amount accepted for the financing round
-     * @param minDeposit the minimum deposit an account can make in one deposit
-     * @param maxDeposit the maximum deposit an account can make in one or more deposits
+     * @param recipient the address of the recipient, where funds are sent on success
+     * @param minGoal the minimum funding amount acceptable for successful financing
+     * @param maxGoal the maximum funding amount accepted for the financing round
+     * @param minContribution the minimum deposit an account can make in one deposit
+     * @param maxContribution the maximum deposit an account can make in one or more deposits
      * @param holdOff the number of seconds to wait until the fund starts
      * @param duration the runtime of the campaign, in seconds
-     * @param tokenAddr the address of the ERC20 token used for payments, or 0 address for native token
+     * @param erc20TokenAddr the address of the ERC20 token used for payments, or 0 address for native token
      */
-    function deploy(
+    function deployCampaign(
         uint64 externalRef,
-        address beneficiary,
-        uint256 fundTargetMin,
-        uint256 fundTargetMax,
-        uint256 minDeposit,
-        uint256 maxDeposit,
+        address recipient,
+        uint256 minGoal,
+        uint256 maxGoal,
+        uint256 minContribution,
+        uint256 maxContribution,
         uint32 holdOff,
         uint32 duration,
-        address tokenAddr
+        address erc20TokenAddr
     ) external payable feeRequired returns (address) {
         address deployment = Clones.clone(_implementation);
 
@@ -87,17 +88,17 @@ contract CrowdFinancingV1Factory is Ownable {
         uint256 endTimestamp = startTimestamp + duration;
 
         CrowdFinancingV1(deployment).initialize(
-            beneficiary,
-            fundTargetMin,
-            fundTargetMax,
-            minDeposit,
-            maxDeposit,
+            recipient,
+            minGoal,
+            maxGoal,
+            minContribution,
+            maxContribution,
             startTimestamp,
             endTimestamp,
-            tokenAddr,
+            erc20TokenAddr,
             _feeCollector,
-            _feeUpfrontBips,
-            _feePayoutBips
+            _feeTransferBips,
+            _feeYieldBips
         );
 
         emit Deployment(externalRef, deployment);
@@ -120,14 +121,14 @@ contract CrowdFinancingV1Factory is Ownable {
      * Update the fee schedule for future deployments
      *
      * @param feeCollector the address of the fee collector, or the 0 address if no fees are collected
-     * @param feeUpfrontBips the upfront fee in basis points, calculated during processing
-     * @param feePayoutBips the payout fee in basis points. Dilutes the cap table for fee collection
+     * @param feeTransferBips the upfront fee in basis points, calculated during processing
+     * @param feeYieldBips the payout fee in basis points. Dilutes the cap table for fee collection
      */
-    function updateFeeSchedule(address feeCollector, uint16 feeUpfrontBips, uint16 feePayoutBips) external onlyOwner {
+    function updateFeeSchedule(address feeCollector, uint16 feeTransferBips, uint16 feeYieldBips) external onlyOwner {
         _feeCollector = feeCollector;
-        _feeUpfrontBips = feeUpfrontBips;
-        _feePayoutBips = feePayoutBips;
-        emit FeeScheduleChange(feeCollector, feeUpfrontBips, feePayoutBips);
+        _feeTransferBips = feeTransferBips;
+        _feeYieldBips = feeYieldBips;
+        emit FeeScheduleChange(feeCollector, feeTransferBips, feeYieldBips);
     }
 
     /**
@@ -144,6 +145,6 @@ contract CrowdFinancingV1Factory is Ownable {
      * Fetch the fee schedule for campaigns and the deploy fee
      */
     function feeSchedule() external view returns (address, uint16, uint16, uint256) {
-        return (_feeCollector, _feeUpfrontBips, _feePayoutBips, _feeDeployMin);
+        return (_feeCollector, _feeTransferBips, _feeYieldBips, _feeDeployMin);
     }
 }

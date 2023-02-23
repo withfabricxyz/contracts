@@ -9,8 +9,8 @@ import "@forge/Test.sol";
 import "@forge/console2.sol";
 
 abstract contract BaseCampaignTest is Test {
-    event Deposit(address indexed account, uint256 numTokens);
-    event TransferDeposits(address indexed account, uint256 numTokens);
+    event Contribution(address indexed account, uint256 numTokens);
+    event TransferContributions(address indexed account, uint256 numTokens);
     event Fail();
 
     modifier prank(address user) {
@@ -47,7 +47,7 @@ abstract contract BaseCampaignTest is Test {
     CrowdFinancingV1 private __campaign;
 
     uint256 internal expirationFuture = 70000;
-    address payable internal beneficiary = payable(0xB4c79DAb8f259C7aeE6e5B2aa729821864227e83);
+    address payable internal recipient = payable(0xB4c79DAb8f259C7aeE6e5B2aa729821864227e83);
     address internal alice = 0xb4c79DAB8f259c7Aee6E5b2aa729821864227E81;
     address internal bob = 0xB4C79DAB8f259C7aEE6E5B2aa729821864227E8a;
     address internal charlie = 0xb4C79Dab8F259C7AEe6e5b2Aa729821864227e7A;
@@ -61,39 +61,39 @@ abstract contract BaseCampaignTest is Test {
     }
 
     function token() internal returns (ERC20Token) {
-        if (campaign().erc20Denominated()) {
-            return ERC20Token(campaign().tokenAddress());
+        if (!campaign().isEthDenominated()) {
+            return ERC20Token(campaign().erc20Address());
         }
         revert("Token isn't available for ETH contracts");
     }
 
     function balance(address account) internal returns (uint256) {
-        if (campaign().erc20Denominated()) {
+        if (!campaign().isEthDenominated()) {
             return token().balanceOf(account);
         }
         return account.balance;
     }
 
     function deposit(address account, uint256 amount) internal prank(account) {
-        if (campaign().erc20Denominated()) {
+        if (!campaign().isEthDenominated()) {
             token().approve(address(campaign()), amount);
-            return campaign().depositTokens(amount);
+            return campaign().contributeERC20(amount);
         } else {
-            return campaign().depositEth{value: amount}();
+            return campaign().contributeEth{value: amount}();
         }
     }
 
     function yield(address account, uint256 amount) internal prank(account) {
-        if (campaign().erc20Denominated()) {
+        if (!campaign().isEthDenominated()) {
             token().approve(address(campaign()), amount);
-            campaign().yieldTokens(amount);
+            campaign().yieldERC20(amount);
         } else {
             campaign().yieldEth{value: amount}();
         }
     }
 
     function yield(uint256 amount) internal {
-        yield(beneficiary, amount);
+        yield(recipient, amount);
     }
 
     function withdraw(address account) internal prank(account) {
@@ -101,7 +101,7 @@ abstract contract BaseCampaignTest is Test {
     }
 
     function dealDenomination(address account, uint256 amount) internal {
-        if (campaign().erc20Denominated()) {
+        if (!campaign().isEthDenominated()) {
             token().transfer(account, amount);
         } else {
             deal(account, amount);
@@ -137,11 +137,21 @@ abstract contract BaseCampaignTest is Test {
         virtual
         returns (CrowdFinancingV1)
     {
+        return createConfiguredCampaign(recipient, _token, collector, upfrontBips, payoutBips);
+    }
+
+    function createConfiguredCampaign(
+        address _recipient,
+        address _token,
+        address collector,
+        uint16 upfrontBips,
+        uint16 payoutBips
+    ) public virtual returns (CrowdFinancingV1) {
         CrowdFinancingV1 c = new CrowdFinancingV1();
 
         vm.store(address(c), bytes32(uint256(0)), bytes32(0));
         c.initialize(
-            beneficiary,
+            _recipient,
             2e18, // 2ETH
             5e18, // 5ETH
             2e17, // 0.2ETH
@@ -179,12 +189,16 @@ abstract contract BaseCampaignTest is Test {
     }
 
     function fundAndTransfer() internal {
+        fundAndEnd();
+        campaign().transferBalanceToRecipient();
+    }
+
+    function fundAndEnd() internal {
         dealAll();
         deposit(alice, 1e18);
         deposit(bob, 1e18);
         deposit(charlie, 1e18);
-        vm.warp(campaign().expiresAt());
-        campaign().processFunds();
+        vm.warp(campaign().endsAt());
     }
 
     function fundAndTransferEarly() internal {
@@ -194,14 +208,13 @@ abstract contract BaseCampaignTest is Test {
         deposit(charlie, 1e18);
         deposit(doug, 1e18);
         deposit(elliot, 1e18);
-        campaign().processFunds();
+        campaign().transferBalanceToRecipient();
     }
 
     function fundAndFail() internal {
         dealAll();
         deposit(alice, 1e18);
-        vm.warp(campaign().expiresAt());
-        campaign().processFunds();
+        vm.warp(campaign().endsAt());
     }
 
     function testIgnore() internal {}

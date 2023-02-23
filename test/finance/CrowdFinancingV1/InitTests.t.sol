@@ -18,53 +18,44 @@ contract InitTests is BaseCampaignTest {
     }
 
     function testValid() public {
-        _campaign.initialize(
-            beneficiary, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0
-        );
+        _campaign.initialize(recipient, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
     function testInitialDeployment() public {
-        _campaign.initialize(
-            beneficiary, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0
-        );
-        assertTrue(_campaign.depositAllowed());
-        assertFalse(_campaign.withdrawAllowed());
-        assertFalse(_campaign.fundTargetMet());
-        assertFalse(_campaign.fundTargetMaxMet());
-        assertEq(0, _campaign.depositTotal());
+        _campaign.initialize(recipient, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
+        assertTrue(_campaign.isContributionAllowed());
+        assertFalse(_campaign.isWithdrawAllowed());
+        assertFalse(_campaign.isGoalMinMet());
+        assertFalse(_campaign.isGoalMaxMet());
         assertEq(0, _campaign.totalSupply());
-        assertEq(0, _campaign.payoutTotal());
-        assertEq(2e17, _campaign.minimumDeposit());
-        assertEq(1e18, _campaign.maximumDeposit());
-        assertEq(address(0), _campaign.tokenAddress());
-        assertEq(2e18, _campaign.minimumFundTarget());
-        assertEq(5e18, _campaign.maximumFundTarget());
-        assertEq(beneficiary, _campaign.beneficiaryAddress());
-        assertEq(address(0), _campaign.feeCollector());
-        assertEq(0, _campaign.upfrontFeeBips());
-        assertEq(0, _campaign.payoutFeeBips());
-        assertFalse(_campaign.erc20Denominated());
+        assertEq(0, _campaign.yieldTotal());
+        assertEq(2e17, _campaign.minAllowedContribution());
+        assertEq(1e18, _campaign.maxAllowedContribution());
+        assertEq(address(0), _campaign.erc20Address());
+        assertEq(2e18, _campaign.goalMin());
+        assertEq(5e18, _campaign.goalMax());
+        assertEq(recipient, _campaign.recipientAddress());
+        assertEq(address(0), _campaign.feeRecipientAddress());
+        assertEq(0, _campaign.transferFeeBips());
+        assertEq(0, _campaign.yieldFeeBips());
+        assertTrue(_campaign.isEthDenominated());
         assertEq(ts, _campaign.startsAt());
-        assertEq(ts + expirationFuture, _campaign.expiresAt());
-        assertTrue(_campaign.started());
-        assertFalse(_campaign.expired());
+        assertEq(ts + expirationFuture, _campaign.endsAt());
+        assertTrue(_campaign.isStarted());
+        assertFalse(_campaign.isEnded());
         assertTrue(_campaign.state() == CrowdFinancingV1.State.FUNDING);
         // assertEq(0, _campaign.payoutsMadeTo(alice));
-        assertEq(0, _campaign.returnOnInvestment(alice));
+        assertEq(0, _campaign.yieldTotalOf(alice));
     }
 
     function testReinit() public {
-        _campaign.initialize(
-            beneficiary, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0
-        );
+        _campaign.initialize(recipient, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
         vm.expectRevert("Initializable: contract is already initialized");
-        _campaign.initialize(
-            beneficiary, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0
-        );
+        _campaign.initialize(recipient, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
-    function testBadBeneficiary() public {
-        vm.expectRevert("Invalid beneficiary address");
+    function testBadrecipient() public {
+        vm.expectRevert("Invalid recipient address");
         _campaign.initialize(
             address(0), 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0
         );
@@ -73,94 +64,84 @@ contract InitTests is BaseCampaignTest {
     function testPastStart() public {
         vm.warp(ts + 200);
         vm.expectRevert("Invalid start time");
-        _campaign.initialize(
-            beneficiary, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0
-        );
+        _campaign.initialize(recipient, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
     function testBadRange() public {
         vm.expectRevert("Invalid time range");
-        _campaign.initialize(beneficiary, 2e18, 5e18, 2e17, 1e18, ts, ts + 20, address(0), address(0), 0, 0);
+        _campaign.initialize(recipient, 2e18, 5e18, 2e17, 1e18, ts, ts + 20, address(0), address(0), 0, 0);
     }
 
     function testTooLong() public {
         vm.expectRevert("Invalid end time");
-        _campaign.initialize(beneficiary, 2e18, 5e18, 2e17, 1e18, ts, ts + 7776000 + 1, address(0), address(0), 0, 0);
+        _campaign.initialize(recipient, 2e18, 5e18, 2e17, 1e18, ts, ts + 7776000 + 1, address(0), address(0), 0, 0);
     }
 
     function testZeroGoal() public {
         vm.expectRevert("Min target must be > 0");
-        _campaign.initialize(beneficiary, 0, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
+        _campaign.initialize(recipient, 0, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
     function testImpossibleGoalRange() public {
         vm.expectRevert("Min target must be <= Max");
-        _campaign.initialize(
-            beneficiary, 5e18, 4e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0
-        );
+        _campaign.initialize(recipient, 5e18, 4e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
     function testZeroDeposit() public {
-        vm.expectRevert("Min deposit must be > 0");
-        _campaign.initialize(beneficiary, 2e18, 5e18, 0, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
+        vm.expectRevert("Min contribution must be > 0");
+        _campaign.initialize(recipient, 2e18, 5e18, 0, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
     function testImpossibleDepositRange() public {
-        vm.expectRevert("Min deposit must be <= Max");
-        _campaign.initialize(
-            beneficiary, 2e18, 5e18, 1e18, 2e17, ts, ts + expirationFuture, address(0), address(0), 0, 0
-        );
+        vm.expectRevert("Min contribution must be <= Max");
+        _campaign.initialize(recipient, 2e18, 5e18, 1e18, 2e17, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
     function testDepositMaxGoalRelation() public {
-        vm.expectRevert("Min deposit must be <= Target Max");
-        _campaign.initialize(
-            beneficiary, 1e18, 2e18, 2e19, 3e19, ts, ts + expirationFuture, address(0), address(0), 0, 0
-        );
+        vm.expectRevert("Min contribution must be <= Target Max");
+        _campaign.initialize(recipient, 1e18, 2e18, 2e19, 3e19, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
     function testMinDepositGoalRelation() public {
-        vm.expectRevert("Min deposit must be < (fundTargetMax - fundTargetMin)");
-        _campaign.initialize(
-            beneficiary, 2e18, 2e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0
-        );
+        vm.expectRevert("Min contribution must be < (maxGoal - minGoal)");
+        _campaign.initialize(recipient, 2e18, 2e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
     function testLargeUpfrontFee() public {
-        vm.expectRevert("Upfront fee too high");
+        vm.expectRevert("Transfer fee too high");
         _campaign.initialize(
-            beneficiary, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 5000, 0
+            recipient, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 5000, 0
         );
     }
 
     function testLargePayoutFee() public {
-        vm.expectRevert("Payout fee too high");
+        vm.expectRevert("Yield fee too high");
         _campaign.initialize(
-            beneficiary, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 5000
+            recipient, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 5000
         );
     }
 
     function testFeeCollectorNoFees() public {
-        vm.expectRevert("Fees must be 0 when there is no fee collector");
+        vm.expectRevert("Fees must be 0 when there is no fee recipient");
         _campaign.initialize(
-            beneficiary, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 250, 0
+            recipient, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 250, 0
         );
     }
 
     function testNoFeeCollectorFees() public {
-        vm.expectRevert("Fees required when fee collector is present");
+        vm.expectRevert("Fees required when fee recipient is present");
         _campaign.initialize(
-            beneficiary, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), feeCollector, 0, 0
+            recipient, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), feeCollector, 0, 0
         );
     }
 
-    function testTokenBalance() public {
+    function testtransferFeeBips() public {
         ERC20Token _token = createERC20Token();
         _campaign.initialize(
-            beneficiary, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(_token), address(0), 0, 0
+            recipient, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(_token), address(0), 0, 0
         );
-        assertTrue(_campaign.erc20Denominated());
-        assertEq(address(_token), _campaign.tokenAddress());
-        assertEq(0, _campaign.tokenBalance());
+        assertFalse(_campaign.isEthDenominated());
+        assertEq(address(_token), _campaign.erc20Address());
+        assertEq(0, _token.balanceOf(address(_campaign)));
     }
 }

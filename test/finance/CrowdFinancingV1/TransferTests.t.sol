@@ -8,49 +8,46 @@ import "src/tokens/ERC20Token.sol";
 import "./mocks/MockToken.sol";
 import "./BaseCampaignTest.t.sol";
 
-contract ProcessTests is BaseCampaignTest {
+contract TransferTests is BaseCampaignTest {
     function testReprocess() public multiTokenTest {
         fundAndTransfer();
-        vm.expectRevert("Funds already processed");
-        campaign().processFunds();
+        vm.expectRevert("Transfer not allowed");
+        campaign().transferBalanceToRecipient();
     }
 
     function testTooEarly() public multiTokenTest {
-        vm.expectRevert("More time/funds required");
-        campaign().processFunds();
+        vm.expectRevert("Transfer not allowed");
+        campaign().transferBalanceToRecipient();
     }
 
     function testSuccess() public multiTokenTest {
         vm.expectEmit(true, false, false, true, address(campaign()));
-        emit TransferDeposits(beneficiary, 1e18 * 3);
+        emit TransferContributions(recipient, 1e18 * 3);
         fundAndTransfer();
         assertTrue(CrowdFinancingV1.State.FUNDED == campaign().state());
-        assertTrue(campaign().withdrawAllowed());
-        assertEq(3e18, balance(beneficiary));
+        assertTrue(campaign().isWithdrawAllowed());
+        assertEq(3e18, balance(recipient));
     }
 
     function testEarlySuccess() public multiTokenTest {
         vm.expectEmit(true, false, false, true, address(campaign()));
-        emit TransferDeposits(beneficiary, 1e18 * 5);
+        emit TransferContributions(recipient, 1e18 * 5);
         fundAndTransferEarly();
         assertTrue(CrowdFinancingV1.State.FUNDED == campaign().state());
-        assertTrue(campaign().withdrawAllowed());
+        assertTrue(campaign().isWithdrawAllowed());
     }
 
     function testBadOutcome() public multiTokenTest {
-        vm.expectEmit(true, false, false, true, address(campaign()));
-        emit Fail();
         fundAndFail();
-        assertTrue(CrowdFinancingV1.State.FAILED == campaign().state());
-        assertTrue(campaign().withdrawAllowed());
+        assertFalse(campaign().isTransferAllowed());
     }
 
     function testUpfrontFees() public multiTokenFeeTest(100, 0) {
         vm.expectEmit(true, true, false, false, address(campaign()));
-        emit TransferDeposits(feeCollector, 3e16);
+        emit TransferContributions(feeCollector, 3e16);
 
         fundAndTransfer();
-        assertEq(3e18 - 3e16, balance(beneficiary));
+        assertEq(3e18 - 3e16, balance(recipient));
         assertEq(3e16, balance(feeCollector));
         assertEq(0, address(campaign()).balance);
     }
@@ -62,48 +59,57 @@ contract ProcessTests is BaseCampaignTest {
         assertTrue(campaign().totalSupply() > preSupply);
         assertTrue(campaign().balanceOf(feeCollector) > 0);
         yield(1e18);
-        assertEq(24390243902439024, campaign().payoutBalance(feeCollector));
+        assertEq(24390243902439024, campaign().yieldBalanceOf(feeCollector));
     }
 
     function testAllFees() public multiTokenFeeTest(100, 250) {
         uint256 preSupply = campaign().totalSupply();
         fundAndTransfer();
-        assertEq(3e18 - 3e16, balance(beneficiary));
+        assertEq(3e18 - 3e16, balance(recipient));
         assertEq(3e16, balance(feeCollector));
         assertTrue(campaign().totalSupply() > preSupply);
     }
 
-    // Coverage of false retrun on free transfer
+    // Coverage of false return on fee transfer
     function testProcessFailedFeeTransfer() public erc20Test {
         MockToken mt = new MockToken("T", "T", 1e21);
         assignCampaign(createFeeCampaign(address(mt), feeCollector, 100, 100));
-
-        dealAll();
-        deposit(alice, 1e18);
-        deposit(bob, 1e18);
-        deposit(charlie, 1e18);
-        vm.warp(campaign().expiresAt());
+        fundAndEnd();
 
         mt.setTransferReturn(false);
         vm.startPrank(alice);
         vm.expectRevert("ERC20: Fee transfer failed");
-        campaign().processFunds();
+        campaign().transferBalanceToRecipient();
     }
 
     // Coverage of false return on transfer
-    function testProcessFailedTransfer() public erc20Test {
+    function testTransferFailedTransfer() public erc20Test {
         MockToken mt = new MockToken("T", "T", 1e21);
         assignCampaign(createCampaign(address(mt)));
-
-        dealAll();
-        deposit(alice, 1e18);
-        deposit(bob, 1e18);
-        deposit(charlie, 1e18);
-        vm.warp(campaign().expiresAt());
+        fundAndEnd();
 
         mt.setTransferReturn(false);
         vm.startPrank(alice);
         vm.expectRevert("ERC20: Transfer failed");
-        campaign().processFunds();
+        campaign().transferBalanceToRecipient();
+    }
+
+    function testTransferEthFailedFeeTransfer() public ethTest {
+        assignCampaign(createFeeCampaign(address(0), address(this), 100, 100));
+        fundAndEnd();
+
+        vm.startPrank(alice);
+        vm.expectRevert("Failed to transfer Ether");
+        campaign().transferBalanceToRecipient();
+    }
+
+    // Coverage of false return on transfer
+    function testProcessFailedTransfer() public erc20Test {
+        assignCampaign(createConfiguredCampaign(address(this), address(0), address(0), 0, 0));
+        fundAndEnd();
+
+        vm.startPrank(alice);
+        vm.expectRevert("Failed to transfer Ether");
+        campaign().transferBalanceToRecipient();
     }
 }

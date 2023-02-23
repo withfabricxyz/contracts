@@ -30,23 +30,23 @@ contract CrowdFinancingV1FactoryTest is BaseCampaignTest {
         vm.expectEmit(false, false, false, true, address(factory));
         emit Deployment(1, address(1));
 
-        address deployment = factory.deploy(1, beneficiary, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+        address deployment = factory.deployCampaign(1, recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
         uint256 time = block.timestamp;
 
         CrowdFinancingV1 campaign = CrowdFinancingV1(deployment);
-        assertFalse(campaign.withdrawAllowed());
-        assertFalse(campaign.fundTargetMet());
-        assertEq(0, campaign.depositTotal());
-        assertEq(2e17, campaign.minimumDeposit());
-        assertEq(1e18, campaign.maximumDeposit());
-        assertFalse(campaign.erc20Denominated());
-        assertEq(address(0), campaign.tokenAddress());
-        assertEq(2e18, campaign.minimumFundTarget());
-        assertEq(5e18, campaign.maximumFundTarget());
-        assertEq(beneficiary, campaign.beneficiaryAddress());
+        assertFalse(campaign.isWithdrawAllowed());
+        assertFalse(campaign.isGoalMinMet());
+        assertEq(0, campaign.totalSupply());
+        assertEq(2e17, campaign.minAllowedContribution());
+        assertEq(1e18, campaign.maxAllowedContribution());
+        assertTrue(campaign.isEthDenominated());
+        assertEq(address(0), campaign.erc20Address());
+        assertEq(2e18, campaign.goalMin());
+        assertEq(5e18, campaign.goalMax());
+        assertEq(recipient, campaign.recipientAddress());
 
         assertEq(time, campaign.startsAt());
-        assertEq(time + (60 * 60), campaign.expiresAt());
+        assertEq(time + (60 * 60), campaign.endsAt());
     }
 
     function testFeeUpdate() public {
@@ -83,8 +83,8 @@ contract CrowdFinancingV1FactoryTest is BaseCampaignTest {
 
     function testDeployFeeTooLow() public {
         factory.updateMinimumDeployFee(1e12);
-        vm.expectRevert("Insuffient ETH to deploy");
-        factory.deploy(1, beneficiary, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+        vm.expectRevert("Insufficient ETH to deploy");
+        factory.deployCampaign(1, recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
     }
 
     function testDeployFeeCollectNone() public {
@@ -94,13 +94,13 @@ contract CrowdFinancingV1FactoryTest is BaseCampaignTest {
 
     function testDeployFeeCapture() public {
         factory.updateMinimumDeployFee(1e12);
-        factory.deploy{value: 1e12}(1, beneficiary, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+        factory.deployCampaign{value: 1e12}(1, recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
         assertEq(1e12, address(factory).balance);
     }
 
     function testDeployFeeTransfer() public {
         factory.updateMinimumDeployFee(1e12);
-        factory.deploy{value: 1e12}(1, beneficiary, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+        factory.deployCampaign{value: 1e12}(1, recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
         vm.expectEmit(true, true, true, true, address(factory));
         emit DeployFeeTransfer(alice, 1e12);
         uint256 beforeBalance = alice.balance;
@@ -111,7 +111,7 @@ contract CrowdFinancingV1FactoryTest is BaseCampaignTest {
 
     function testDeployFeeTransferNonOwner() public {
         factory.updateMinimumDeployFee(1e12);
-        factory.deploy{value: 1e12}(1, beneficiary, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+        factory.deployCampaign{value: 1e12}(1, recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
         vm.startPrank(alice);
         vm.expectRevert("Ownable: caller is not the owner");
         factory.transferDeployFees(alice);
@@ -119,7 +119,7 @@ contract CrowdFinancingV1FactoryTest is BaseCampaignTest {
 
     function testDeployFeeTransferBadReceiver() public {
         factory.updateMinimumDeployFee(1e12);
-        factory.deploy{value: 1e12}(1, beneficiary, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+        factory.deployCampaign{value: 1e12}(1, recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
         vm.expectRevert("Failed to transfer Ether");
         factory.transferDeployFees(address(this));
     }

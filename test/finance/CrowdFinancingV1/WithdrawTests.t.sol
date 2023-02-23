@@ -12,8 +12,8 @@ contract WithdrawTests is BaseCampaignTest {
     function testGoalNotMet() public multiTokenTest {
         dealMulti(alice, 1e19);
         deposit(alice, 1e18);
-        vm.warp(campaign().expiresAt());
-        vm.expectEmit(true, false, false, true, address(campaign()));
+        vm.warp(campaign().endsAt());
+        vm.expectEmit(true, true, true, true, address(campaign()));
         emit Fail();
         withdraw(alice);
         assertEq(0, campaign().balanceOf(alice));
@@ -23,13 +23,13 @@ contract WithdrawTests is BaseCampaignTest {
     function testDoubleWithdraw() public multiTokenTest {
         dealMulti(alice, 1e19);
         deposit(alice, 1e18);
-        vm.warp(campaign().expiresAt());
+        vm.warp(campaign().endsAt());
         withdraw(alice);
         vm.expectRevert("No balance");
         withdraw(alice);
     }
 
-    function testDoubleWithdrawPayout() public multiTokenTest {
+    function testDoubleWithdrawYieldBalance() public multiTokenTest {
         fundAndTransfer();
         yield(1e18);
         withdraw(alice);
@@ -46,7 +46,7 @@ contract WithdrawTests is BaseCampaignTest {
         withdraw(alice);
     }
 
-    function testWithdrawPayoutERC20Fail() public erc20Test {
+    function testWithdrawYieldBalanceERC20Fail() public erc20Test {
         MockToken mt = new MockToken("T", "T", 1e21);
         assignCampaign(createCampaign(address(mt)));
         fundAndTransfer();
@@ -59,7 +59,7 @@ contract WithdrawTests is BaseCampaignTest {
         vm.stopPrank();
     }
 
-    function testWithdrawDepositERC20Fail() public erc20Test {
+    function testWithdrawContributeERC20Fail() public erc20Test {
         MockToken mt = new MockToken("T", "T", 1e21);
         assignCampaign(createCampaign(address(mt)));
         fundAndFail();
@@ -69,5 +69,22 @@ contract WithdrawTests is BaseCampaignTest {
         vm.expectRevert("ERC20 transfer failed");
         campaign().withdraw();
         vm.stopPrank();
+    }
+
+    function testWithdrawContributionEthFail() public ethTest {
+        deposit(address(this), 2e17);
+        fundAndFail();
+
+        vm.expectRevert("Failed to transfer Ether");
+        campaign().withdraw();
+    }
+
+    function testWithdrawYieldEthFail() public ethTest {
+        deposit(address(this), 2e17);
+        fundAndTransfer();
+        yield(1e18);
+
+        vm.expectRevert("Failed to transfer Ether");
+        campaign().withdraw();
     }
 }
