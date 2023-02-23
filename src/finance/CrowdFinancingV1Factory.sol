@@ -16,7 +16,7 @@ import "./CrowdFinancingV1.sol";
  */
 contract CrowdFinancingV1Factory is Ownable {
     modifier feeRequired() {
-        require(msg.value >= _feeDeployMin, "Insuffient ETH to deploy");
+        require(msg.value >= _feeDeployMin, "Insufficient ETH to deploy");
         _;
     }
 
@@ -63,7 +63,7 @@ contract CrowdFinancingV1Factory is Ownable {
      *
      * @param externalRef An optional reference value emitted in the deploy event for association
      * @param recipient the address of the recipient, where funds are sent on success
-     * @param minGoal the minimum funding amount acceptible for successful financing
+     * @param minGoal the minimum funding amount acceptable for successful financing
      * @param maxGoal the maximum funding amount accepted for the financing round
      * @param minContribution the minimum deposit an account can make in one deposit
      * @param maxContribution the maximum deposit an account can make in one or more deposits

@@ -88,48 +88,48 @@ contract InitTests is BaseCampaignTest {
     }
 
     function testZeroDeposit() public {
-        vm.expectRevert("Min deposit must be > 0");
+        vm.expectRevert("Min contribution must be > 0");
         _campaign.initialize(recipient, 2e18, 5e18, 0, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
     function testImpossibleDepositRange() public {
-        vm.expectRevert("Min deposit must be <= Max");
+        vm.expectRevert("Min contribution must be <= Max");
         _campaign.initialize(recipient, 2e18, 5e18, 1e18, 2e17, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
     function testDepositMaxGoalRelation() public {
-        vm.expectRevert("Min deposit must be <= Target Max");
+        vm.expectRevert("Min contribution must be <= Target Max");
         _campaign.initialize(recipient, 1e18, 2e18, 2e19, 3e19, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
     function testMinDepositGoalRelation() public {
-        vm.expectRevert("Min deposit must be < (maxGoal - minGoal)");
+        vm.expectRevert("Min contribution must be < (maxGoal - minGoal)");
         _campaign.initialize(recipient, 2e18, 2e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
     function testLargeUpfrontFee() public {
-        vm.expectRevert("Upfront fee too high");
+        vm.expectRevert("Transfer fee too high");
         _campaign.initialize(
             recipient, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 5000, 0
         );
     }
 
     function testLargePayoutFee() public {
-        vm.expectRevert("Payout fee too high");
+        vm.expectRevert("Yield fee too high");
         _campaign.initialize(
             recipient, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 5000
         );
     }
 
     function testFeeCollectorNoFees() public {
-        vm.expectRevert("Fees must be 0 when there is no fee collector");
+        vm.expectRevert("Fees must be 0 when there is no fee recipient");
         _campaign.initialize(
             recipient, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 250, 0
         );
     }
 
     function testNoFeeCollectorFees() public {
-        vm.expectRevert("Fees required when fee collector is present");
+        vm.expectRevert("Fees required when fee recipient is present");
         _campaign.initialize(
             recipient, 2e18, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), feeCollector, 0, 0
         );

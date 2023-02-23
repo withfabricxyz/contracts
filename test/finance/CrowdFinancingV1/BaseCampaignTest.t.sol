@@ -9,8 +9,8 @@ import "@forge/Test.sol";
 import "@forge/console2.sol";
 
 abstract contract BaseCampaignTest is Test {
-    event Deposit(address indexed account, uint256 numTokens);
-    event TransferDeposits(address indexed account, uint256 numTokens);
+    event Contribution(address indexed account, uint256 numTokens);
+    event TransferContributions(address indexed account, uint256 numTokens);
     event Fail();
 
     modifier prank(address user) {
@@ -137,11 +137,21 @@ abstract contract BaseCampaignTest is Test {
         virtual
         returns (CrowdFinancingV1)
     {
+        return createConfiguredCampaign(recipient, _token, collector, upfrontBips, payoutBips);
+    }
+
+    function createConfiguredCampaign(
+        address _recipient,
+        address _token,
+        address collector,
+        uint16 upfrontBips,
+        uint16 payoutBips
+    ) public virtual returns (CrowdFinancingV1) {
         CrowdFinancingV1 c = new CrowdFinancingV1();
 
         vm.store(address(c), bytes32(uint256(0)), bytes32(0));
         c.initialize(
-            recipient,
+            _recipient,
             2e18, // 2ETH
             5e18, // 5ETH
             2e17, // 0.2ETH
@@ -179,12 +189,16 @@ abstract contract BaseCampaignTest is Test {
     }
 
     function fundAndTransfer() internal {
+        fundAndEnd();
+        campaign().transferBalanceToRecipient();
+    }
+
+    function fundAndEnd() internal {
         dealAll();
         deposit(alice, 1e18);
         deposit(bob, 1e18);
         deposit(charlie, 1e18);
         vm.warp(campaign().endsAt());
-        campaign().transferBalanceToRecipient();
     }
 
     function fundAndTransferEarly() internal {

@@ -8,7 +8,7 @@ import "src/tokens/ERC20Token.sol";
 import "./BaseCampaignTest.t.sol";
 import "./mocks/MockToken.sol";
 
-contract DepositTests is BaseCampaignTest {
+contract ContributionTests is BaseCampaignTest {
     function testHappyPath() public multiTokenTest {
         dealMulti(alice, 1e19);
         deposit(alice, 1e18);
@@ -17,7 +17,7 @@ contract DepositTests is BaseCampaignTest {
 
     function testDepositEmit() public multiTokenTest {
         vm.expectEmit(true, false, false, true, address(campaign()));
-        emit Deposit(alice, 1e18);
+        emit Contribution(alice, 1e18);
         dealMulti(alice, 1e19);
         deposit(alice, 1e18);
     }
@@ -28,7 +28,7 @@ contract DepositTests is BaseCampaignTest {
         dealMulti(alice, 1e19);
 
         vm.startPrank(alice);
-        vm.expectRevert("Deposits are not allowed");
+        vm.expectRevert("Contributions are not allowed");
         campaign().contributeEth{value: 1e18}();
     }
 
@@ -37,7 +37,7 @@ contract DepositTests is BaseCampaignTest {
         dealMulti(alice, 1e19);
         vm.startPrank(alice);
         token().approve(address(campaign()), 1e18);
-        vm.expectRevert("Deposits are not allowed");
+        vm.expectRevert("Contributions are not allowed");
         campaign().contributeERC20(1e18);
     }
 
@@ -58,7 +58,7 @@ contract DepositTests is BaseCampaignTest {
     function testLateDeposit() public ethTest {
         vm.warp(campaign().endsAt() + 1);
         assertFalse(campaign().isContributionAllowed());
-        vm.expectRevert("Deposits are not allowed");
+        vm.expectRevert("Contributions are not allowed");
         campaign().contributeEth{value: 1e19}();
     }
 
@@ -73,7 +73,7 @@ contract DepositTests is BaseCampaignTest {
     }
 
     function testSmallContribution() public ethTest prank(alice) {
-        vm.expectRevert("Deposit amount is too low");
+        vm.expectRevert("Contribution amount is too low");
         deal(alice, 1e18);
         campaign().contributeEth{value: 1e11}();
     }
@@ -102,28 +102,28 @@ contract DepositTests is BaseCampaignTest {
 
     function testHugeDeposit() public ethTest prank(alice) {
         deal(alice, 1e20);
-        vm.expectRevert("Deposit amount is too high");
+        vm.expectRevert("Contribution amount is too high");
         campaign().contributeEth{value: 1e19}();
     }
 
     function testBadOutcome() public ethTest {
         fundAndFail();
         vm.startPrank(alice);
-        vm.expectRevert("Deposits are not allowed");
+        vm.expectRevert("Contributions are not allowed");
         campaign().contributeEth{value: 1e18}();
     }
 
     function testEarlyGoal() public ethTest {
         fundAndTransferEarly();
         vm.startPrank(alice);
-        vm.expectRevert("Deposits are not allowed");
+        vm.expectRevert("Contributions are not allowed");
         campaign().contributeEth{value: 1e18}();
     }
 
     function testTransferredCampaign() public ethTest {
         fundAndTransfer();
         vm.startPrank(alice);
-        vm.expectRevert("Deposits are not allowed");
+        vm.expectRevert("Contributions are not allowed");
         campaign().contributeEth{value: 1e18}();
     }
 

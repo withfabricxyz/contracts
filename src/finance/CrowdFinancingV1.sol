@@ -11,52 +11,55 @@ import "@openzeppelin-upgradeable/contracts/security/ReentrancyGuardUpgradeable.
  * @title Crowd Financing with Optional Yield
  * @author Fabric Inc.
  *
- * A minimal contract for accumulating funds from many accounts, transferring the balance
- * to a recipient, and allocating payouts to depositors as the recipient returns funds.
+ * A crowd financing contract represents a Campaign. A campaign has the following key variables:
+ *
+ * Min Goal: The amount of Eth or ERC20 tokens required
+ * Max Goal: The maximum amount of Eth or ERC20 tokens accepted
+ * Raise Window: The time window in which the campaign is active and accounts can contribute funds
+ * Recipient: The address which receives the funds if the goal is met
+ * Optional ERC20 Token Address: Allows for ERC20 campaigns. If a zero address is given, the campaign
+ * is an ETH campaign.
  *
  * The primary purpose of this contract is financing a trusted recipient with the possibility of ROI.
- * If the fund target is met within the fund raising window, then processing the funds will transfer all
- * raised funds to the recipient, minus optional fee, and change the state of the contract to allow for payouts to occur.
  *
- * If the fund target is not met in the fund raise window, the raise fails, and all depositors can
- * withdraw their initial investment.
+ * If the minimum goal is met within the raise window, the balance of the contract can be transferred to
+ * the recipient upon calling the transferBalanceToRecipient function.
  *
- * Timing and processing:
- * Processing can only occur after the fund raise window expires OR the fund target max is met.
+ * If the goal is not met, the funds are unlocked for contributors to withdraw.
  *
  * The minimum campaign duration is 30 minutes, and the max duration is 90 days. The window is reasonable
  * for many scenarios, and if more time is required, many campaigns can be created in sequence. Locking
- * funds beyond 90 days seems unecessary and risky.
+ * funds beyond 90 days seems unnecessary and risky.
  *
- * Deposits:
- * Accounts deposit tokens by first creating an allowance in the token contract, and then
+ * Contributions:
+ * Accounts contribute tokens by first creating an allowance in the token contract, and then
  * calling the contributeERC20 function, which will transfer the tokens if all constraints
  * are satisfied.
  *
- * For ETH campaigns, a depositer calls contributeEth with a given ETH value.
+ * For ETH campaigns, a contributor calls contributeEth with a given ETH value.
+ * For ERC20 campaigns, a contributor calls contributeERC20 with a given token value.
  *
- * Payouts:
+ * Yield:
  * The recipient makes payments by invoking the yieldERC20 or yieldEth functions which works
- * similar to the deposit function.
+ * similar to the contribute functions.
  *
- * As the payout balance accrues, depositors can invoke the withdraw function to transfer their
- * payout balance.
+ * As the yield balance accrues, contributors can invoke the withdraw function to transfer their
+ * payout balance to their account
  *
- * ERC20 Compliant
- *
- * All deposits are tracked and used to calculate ERC20 total supply. Depositors can transfer
- * their deposit balance to another account using ERC20 functionality. Transfers of deposit tokens will
+ * ERC20 Compliance:
+ * All contributions are tracked and used to calculate ERC20 total supply. Contributors can transfer
+ * their contribution balance to another account using ERC20 functionality. Transfers of contribution tokens will
  * also transfer future withdraw capability to the receiver. This allows for account transfer and
  * makes liquidity possible.
  *
  * Fees:
- * The contract can be initialized with an optional fee collector address with options for two
- * kinds of fees, in basis points. A value of 250 would mean 2.5%.
+ * The contract can be initialized with an optional fee recipient address with options for two
+ * kinds of fees:
  *
- * Type A Fee: Upon processing, a percentage of the total deposit amount is carved out and sent
- * to the fee collector. The remaining balance is sent to the recipient.
- * Type B Fee: Upon processing, the fee collector is added to the cap table as a depositor with a
- * value commensurate with the fee, and the total deposits is also increased by that amount.
+ * Type A Fee: Upon transfer, a percentage of the total contribution amount is carved out and sent
+ * to the fee recipient address. The remaining balance is sent to the recipient.
+ * Type B Fee: Upon transfer, the fee recipient is added to the cap table as a contributor with a
+ * value commensurate with the fee, and the total contributions is also increased by that amount.
  *
  */
 contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
@@ -79,12 +82,12 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         _;
     }
 
-    // Guard to ensure deposits are allowed
+    // Guard to ensure contributions are allowed
     modifier contributionGuard(uint256 amount) {
-        require(isContributionAllowed(), "Deposits are not allowed");
+        require(isContributionAllowed(), "Contributions are not allowed");
         uint256 total = _contributions[msg.sender] + amount;
-        require(total >= _minContribution, "Deposit amount is too low");
-        require(total <= _maxContribution, "Deposit amount is too high");
+        require(total >= _minContribution, "Contribution amount is too low");
+        require(total <= _maxContribution, "Contribution amount is too high");
         _;
     }
 
@@ -103,15 +106,15 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     // Maximum basis points
     uint16 private constant MAX_BIPS = 10_000;
 
-    /// @notice Emitted when an account deposits funds to the contract
-    event Deposit(address indexed account, uint256 numTokens);
+    /// @notice Emitted when an account contributions funds to the contract
+    event Contribution(address indexed account, uint256 numTokens);
 
-    /// @notice Emitted when an account withdraws their initial deposit or payout balance
+    /// @notice Emitted when an account withdraws their initial contribution or yield balance
     event Withdraw(address indexed account, uint256 numTokens);
 
     /// @notice Emitted when the funds are transferred to the recipient and when
     /// fees are transferred to the fee collector, if specified
-    event TransferDeposits(address indexed account, uint256 numTokens);
+    event TransferContributions(address indexed account, uint256 numTokens);
 
     /// @notice Emitted on processing if time has elapsed and the target was not met
     event Fail();
@@ -138,14 +141,14 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     // contract will transfer funds upon processing
     uint256 private _goalMin;
 
-    // The maximum fund target. If a transfer from a funder causes totalFunds to exceed
+    // The maximum fund target. If a transfer from a contributor causes totalFunds to exceed
     // this value, the transaction will revert.
     uint256 private _goalMax;
 
-    // The minimum tokens an account can deposit
+    // The minimum tokens an account can contribute
     uint256 private _minContribution;
 
-    // The maximum tokens an account can deposit
+    // The maximum tokens an account can contribute
     uint256 private _maxContribution;
 
     // The starting timestamp for the fund
@@ -154,13 +157,13 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     // The expiration timestamp for the fund
     uint256 private _endTimestamp;
 
-    // The total amount deposited for all accounts
+    // The total amount contributed by all accounts
     uint256 private _contributionTotal;
 
     // The total amount withdrawn for all accounts
     uint256 private _withdrawTotal;
 
-    // The mapping from account to what that account has deposited
+    // The mapping from account to what that account has contributed
     mapping(address => uint256) private _contributions;
 
     // The mapping from account to what that account has withdrawn
@@ -172,14 +175,14 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     // Fee related items
 
     // The optional address of the fee collector
-    address private _feeCollector;
+    address private _feeRecipient;
 
     // The fee in basis points, transferred to the fee collector when
     // processing a successful raise
     uint16 private _feeTransferBips;
 
     // The fee in basis points, used to dilute the cap table when
-    // processing a succesful raise
+    // processing a successful raise
     uint16 private _feeYieldBips;
 
     // Track the number of tokens sent via makePayment
@@ -230,17 +233,17 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         );
         require(minGoal > 0, "Min target must be > 0");
         require(minGoal <= maxGoal, "Min target must be <= Max");
-        require(minContribution > 0, "Min deposit must be > 0");
-        require(minContribution <= maxContribution, "Min deposit must be <= Max");
-        require(minContribution <= maxGoal, "Min deposit must be <= Target Max");
-        require(minContribution < (maxGoal - minGoal), "Min deposit must be < (maxGoal - minGoal)");
-        require(feeTransferBips <= MAX_FEE_BIPS, "Upfront fee too high");
-        require(feeYieldBips <= MAX_FEE_BIPS, "Payout fee too high");
+        require(minContribution > 0, "Min contribution must be > 0");
+        require(minContribution <= maxContribution, "Min contribution must be <= Max");
+        require(minContribution <= maxGoal, "Min contribution must be <= Target Max");
+        require(minContribution < (maxGoal - minGoal), "Min contribution must be < (maxGoal - minGoal)");
+        require(feeTransferBips <= MAX_FEE_BIPS, "Transfer fee too high");
+        require(feeYieldBips <= MAX_FEE_BIPS, "Yield fee too high");
 
         if (feeRecipientAddr != address(0)) {
-            require(feeTransferBips > 0 || feeYieldBips > 0, "Fees required when fee collector is present");
+            require(feeTransferBips > 0 || feeYieldBips > 0, "Fees required when fee recipient is present");
         } else {
-            require(feeTransferBips == 0 && feeYieldBips == 0, "Fees must be 0 when there is no fee collector");
+            require(feeTransferBips == 0 && feeYieldBips == 0, "Fees must be 0 when there is no fee recipient");
         }
 
         _recipientAddress = recipient;
@@ -253,7 +256,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         _token = IERC20(erc20TokenAddr);
         _erc20 = erc20TokenAddr != address(0);
 
-        _feeCollector = feeRecipientAddr;
+        _feeRecipient = feeRecipientAddr;
         _feeTransferBips = feeTransferBips;
         _feeYieldBips = feeYieldBips;
 
@@ -265,58 +268,58 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     }
 
     ///////////////////////////////////////////
-    // Phase 1: Deposits
+    // Phase 1: Contributions
     ///////////////////////////////////////////
 
     /**
-     * @notice Deposit ERC20 tokens into the contract
+     * @notice Contribute ERC20 tokens into the contract
      *
-     * @param amount the amount of ERC20 tokens to deposit
+     * @param amount the amount of ERC20 tokens to contribute
      *
-     * Emits a {Deposit} event
+     * Emits a {Contribution} event
      *
      * Requirements:
      *
-     * - `amount` must be within range of min and max deposit for account
+     * - `amount` must be within range of min and max contribution for account
      * - `amount` must not cause max goal to be exceeded
      * - `amount` must be approved for transfer by the caller
-     * - deposits must be allowed
+     * - contributions must be allowed
      */
     function contributeERC20(uint256 amount) external erc20Only contributionGuard(amount) nonReentrant {
         _addContribution(msg.sender, _transferSafe(msg.sender, amount));
     }
 
     /**
-     * @notice Deposit ETH into the contract
+     * @notice Contribute ETH into the contract
      *
-     * Emits a {Deposit} event
+     * Emits a {Contribution} event
      *
      * Requirements:
      *
-     * - `msg.value` must be within range of min and max deposit for account
+     * - `msg.value` must be within range of min and max contribution for account
      * - `msg.value` must not cause max goal to be exceeded
-     * - deposits must be allowed
+     * - contributions must be allowed
      */
     function contributeEth() external payable ethOnly contributionGuard(msg.value) {
         _addContribution(msg.sender, msg.value);
     }
 
     /**
-     * @notice Add a deposit to the account and update totals
+     * @notice Add a contribution to the account and update totals
      *
-     * @param account the account to add the deposit to
-     * @param amount the amount of the deposit
+     * @param account the account to add the contribution to
+     * @param amount the amount of the contribution
      *
-     * Emits a {Deposit} event
+     * Emits a {Contribution} event
      */
     function _addContribution(address account, uint256 amount) private {
         _contributions[account] += amount;
         _contributionTotal += amount;
-        emit Deposit(account, amount);
+        emit Contribution(account, amount);
     }
 
     /**
-     * @return true if deposits are allowed
+     * @return true if contributions are allowed
      */
     function isContributionAllowed() public view returns (bool) {
         return _state == State.FUNDING && !isGoalMaxMet() && isStarted() && !isEnded();
@@ -336,37 +339,36 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     /**
      * @notice Transfer funds to the recipient and change the state
      *
-     * Emits a {Transfer} event if the target was met and funds transferred
+     * Emits a {TransferContributions} event if the target was met and funds transferred
      */
     function transferBalanceToRecipient() external {
         require(isTransferAllowed(), "Transfer not allowed");
 
         _state = State.FUNDED;
 
-        uint256 feeAmount = calculateUpfrontFee();
+        uint256 feeAmount = calculateTransferFee();
         uint256 transferAmount = _contributionTotal - feeAmount;
 
         // This can mutate _contributionTotal, so that withdraws don't over withdraw
         allocateYieldFee();
 
-        // If any upfront fee is present, pay that out to the collector now, so the funds
-        // are not available for depositors to withdraw
+        // If any transfer fee is present, pay that out to the fee recipient
         if (feeAmount > 0) {
-            emit TransferDeposits(_feeCollector, feeAmount);
+            emit TransferContributions(_feeRecipient, feeAmount);
             if (_erc20) {
-                require(_token.transfer(_feeCollector, feeAmount), "ERC20: Fee transfer failed");
+                require(_token.transfer(_feeRecipient, feeAmount), "ERC20: Fee transfer failed");
             } else {
-                // TODO: Call
-                payable(_feeCollector).transfer(feeAmount);
+                (bool sent,) = payable(_feeRecipient).call{value: feeAmount}("");
+                require(sent, "Failed to transfer Ether");
             }
         }
 
-        emit TransferDeposits(_recipientAddress, transferAmount);
+        emit TransferContributions(_recipientAddress, transferAmount);
         if (_erc20) {
             require(_token.transfer(_recipientAddress, transferAmount), "ERC20: Transfer failed");
         } else {
-            // TODO: Call
-            payable(_recipientAddress).transfer(transferAmount);
+            (bool sent,) = payable(_recipientAddress).call{value: transferAmount}("");
+            require(sent, "Failed to transfer Ether");
         }
     }
 
@@ -375,22 +377,22 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
      * withdraws of yield
      */
     function allocateYieldFee() private returns (uint256) {
-        if (_feeCollector == address(0) || _feeYieldBips == 0) {
+        if (_feeYieldBips == 0) {
             return 0;
         }
         uint256 feeAllocation = (_contributionTotal * _feeYieldBips) / (MAX_BIPS);
 
-        _contributions[_feeCollector] += feeAllocation;
+        _contributions[_feeRecipient] += feeAllocation;
         _contributionTotal += feeAllocation;
 
         return feeAllocation;
     }
 
     /**
-     * @dev Caclulates a fee to transfer to the fee collector upon processing
+     * @dev Calculates a fee to transfer to the fee collector upon processing
      */
-    function calculateUpfrontFee() private view returns (uint256) {
-        if (_feeCollector == address(0) || _feeTransferBips == 0) {
+    function calculateTransferFee() private view returns (uint256) {
+        if (_feeTransferBips == 0) {
             return 0;
         }
         return (_contributionTotal * _feeTransferBips) / (MAX_BIPS);
@@ -415,7 +417,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     ///////////////////////////////////////////
 
     /**
-     * @notice The only way to make payments to contributors
+     * @notice The only way to make ERC20 payments to contributors
      *
      * @param amount the amount of tokens to payout
      *
@@ -527,12 +529,13 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         if (_erc20) {
             require(_token.transfer(account, amount), "ERC20 transfer failed");
         } else {
-            payable(account).transfer(amount);
+            (bool sent,) = payable(account).call{value: amount}("");
+            require(sent, "Failed to transfer Ether");
         }
     }
 
     /**
-     * @dev @ithdraw the available yield balance for the given account
+     * @dev Withdraw the available yield balance for the given account
      */
     function withdrawYieldBalance(address account) private {
         uint256 amount = yieldBalanceOf(account);
@@ -544,12 +547,13 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         if (_erc20) {
             require(_token.transfer(account, amount), "ERC20 transfer failed");
         } else {
-            payable(account).transfer(amount);
+            (bool sent,) = payable(account).call{value: amount}("");
+            require(sent, "Failed to transfer Ether");
         }
     }
 
     ///////////////////////////////////////////
-    // Utility Functons
+    // Utility Functions
     ///////////////////////////////////////////
 
     /**
@@ -748,42 +752,42 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     }
 
     /**
-     * @return The minimum allowed deposit of ERC20 tokens or WEI
+     * @return The minimum allowed contribution of ERC20 tokens or WEI
      */
     function minAllowedContribution() external view returns (uint256) {
         return _minContribution;
     }
 
     /**
-     * @return The maximum allowed deposit of ERC20 tokens or WEI
+     * @return The maximum allowed contribution of ERC20 tokens or WEI
      */
     function maxAllowedContribution() external view returns (uint256) {
         return _maxContribution;
     }
 
     /**
-     * @return The unix timestamp in seconds when the time window for deposits starts
+     * @return The unix timestamp in seconds when the time window for contribution starts
      */
     function startsAt() external view returns (uint256) {
         return _startTimestamp;
     }
 
     /**
-     * @return true if the time window for deposits has started
+     * @return true if the time window for contribution has started
      */
     function isStarted() public view returns (bool) {
         return block.timestamp >= _startTimestamp;
     }
 
     /**
-     * @return The unix timestamp in seconds when the deposit window ends
+     * @return The unix timestamp in seconds when the contribution window ends
      */
     function endsAt() external view returns (uint256) {
         return _endTimestamp;
     }
 
     /**
-     * @return The if the time window for deposits has closed
+     * @return true if the time window for contribution has closed
      */
     function isEnded() public view returns (bool) {
         return block.timestamp >= _endTimestamp;
@@ -842,6 +846,6 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
      * @return The address where the fees are transferred to, or 0x0 if no fees are collected
      */
     function feeRecipientAddress() external view returns (address) {
-        return _feeCollector;
+        return _feeRecipient;
     }
 }

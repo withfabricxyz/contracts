@@ -1,0 +1,5 @@
+#!/bin/bash
+
+cd "$(dirname $0)/.." || exit 1
+
+docker run -v $(pwd):/tmp mythril/myth analyze /tmp/src/finance/CrowdFinancingV1.sol --solc-json /tmp/.solc.json

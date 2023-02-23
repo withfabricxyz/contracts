@@ -83,7 +83,7 @@ contract CrowdFinancingV1FactoryTest is BaseCampaignTest {
 
     function testDeployFeeTooLow() public {
         factory.updateMinimumDeployFee(1e12);
-        vm.expectRevert("Insuffient ETH to deploy");
+        vm.expectRevert("Insufficient ETH to deploy");
         factory.deployCampaign(1, recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
     }
 

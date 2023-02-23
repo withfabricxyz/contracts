@@ -1,0 +1,7 @@
+{
+  "remappings": [
+    "@openzeppelin/=lib/openzeppelin-contracts/",
+    "@openzeppelin-upgradeable/=lib/openzeppelin-contracts-upgradeable/",
+    "@forge/=lib/forge-std/src/"
+  ]
+}

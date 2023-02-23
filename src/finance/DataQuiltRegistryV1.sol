@@ -38,7 +38,7 @@ contract DataQuiltRegistryV1 is ERC721 {
     function mint(uint256 tokenId) external {
         address account = msg.sender;
         address campaignAddress = address(uint160(tokenId >> 96));
-        require(canMint(campaignAddress), "Err: already minted or deposits not found");
+        require(canMint(campaignAddress), "Err: already minted or contribution not found");
         _safeMint(account, tokenId);
         _campaignMints[campaignAddress][account] = true;
     }
