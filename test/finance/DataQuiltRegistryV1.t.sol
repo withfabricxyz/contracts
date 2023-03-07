@@ -37,7 +37,7 @@ contract DataQuiltRegistryV1Test is BaseCampaignTest {
 
         deposit(alice, 1e18);
         vm.startPrank(alice);
-        assert(registry.canMint(address(campaign())));
+        assert(registry.canMint(address(campaign()), alice));
         registry.mint(id);
 
         assertEq(1, registry.balanceOf(alice));
@@ -46,7 +46,7 @@ contract DataQuiltRegistryV1Test is BaseCampaignTest {
             registry.tokenURI(id)
         );
 
-        assert(!registry.canMint(address(campaign())));
+        assert(!registry.canMint(address(campaign()), alice));
         vm.expectRevert("Err: already minted or contribution not found");
         registry.mint(id);
         vm.expectRevert("Err: already minted or contribution not found");
