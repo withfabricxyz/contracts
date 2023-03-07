@@ -38,7 +38,7 @@ contract DataQuiltRegistryV1 is ERC721 {
     function mint(uint256 tokenId) external {
         address account = msg.sender;
         address campaignAddress = address(uint160(tokenId >> 96));
-        require(canMint(campaignAddress), "Err: already minted or contribution not found");
+        require(canMint(campaignAddress, msg.sender), "Err: already minted or contribution not found");
         _safeMint(account, tokenId);
         _campaignMints[campaignAddress][account] = true;
     }
@@ -47,15 +47,16 @@ contract DataQuiltRegistryV1 is ERC721 {
      * Check if an account can mint a token for a campaign
      *
      * @param campaignAddress the address of the campaign
+     * @param account the account to check
      *
      * @return true if the account can mint a token for the campaign
      */
-    function canMint(address campaignAddress) public view returns (bool) {
-        if (_campaignMints[campaignAddress][msg.sender]) {
+    function canMint(address campaignAddress, address account) public view returns (bool) {
+        if (_campaignMints[campaignAddress][account]) {
             return false;
         }
         // Is it possible to verify this is a CFV1 contract?
-        return CrowdFinancingV1(payable(campaignAddress)).balanceOf(msg.sender) > 0;
+        return CrowdFinancingV1(payable(campaignAddress)).balanceOf(account) > 0;
     }
 
     /**
