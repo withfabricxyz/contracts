@@ -15,10 +15,10 @@ import "./CrowdFinancingV1.sol";
  *
  */
 contract DataQuiltRegistryV1 is ERC721 {
-    // Base URI for which we generate URIs for NFTs
+    /// @dev Base URI for which we generate URIs for NFTs
     string private _baseUri;
 
-    // Campaign specific double mint guard
+    /// @dev Campaign specific double mint guard
     mapping(address => mapping(address => bool)) private _campaignMints;
 
     /**
@@ -31,7 +31,7 @@ contract DataQuiltRegistryV1 is ERC721 {
     }
 
     /**
-     * Mint a contribution token using a tokenId, which encodes the campaign address and pattern configuration
+     * @dev Mint a contribution token using a tokenId, which encodes the campaign address and pattern configuration
      *
      * @param tokenId the id of the token, which is an abi packed [campaign address, uint64(0), uint32(variant)]
      */
@@ -44,7 +44,7 @@ contract DataQuiltRegistryV1 is ERC721 {
     }
 
     /**
-     * Check if an account can mint a token for a campaign
+     * @dev Check if an account can mint a token for a campaign
      *
      * @param campaignAddress the address of the campaign
      * @param account the account to check

@@ -93,6 +93,59 @@ contract ContributionTests is BaseCampaignTest {
         assertEq(0, max);
     }
 
+    function testDepositRangeAdvanced() public ethTest {
+        vm.store(address(campaign()), bytes32(uint256(0)), bytes32(0));
+        campaign().initialize(
+            address(alice),
+            1 ether,
+            1.25 ether,
+            0.2 ether,
+            1 ether,
+            block.timestamp,
+            block.timestamp + expirationFuture,
+            address(0),
+            address(0),
+            0,
+            0
+        );
+
+        deal(alice, 2e18);
+        deal(bob, 2e18);
+        deal(charlie, 2e18);
+
+        (uint256 min, uint256 max) = campaign().contributionRangeFor(alice);
+        assertEq(0.2 ether, min);
+        assertEq(1 ether, max);
+
+        vm.startPrank(alice);
+        campaign().contributeEth{value: 1e18}();
+        vm.stopPrank();
+
+        vm.startPrank(bob);
+        campaign().contributeEth{value: 0.24 ether}();
+        vm.stopPrank();
+
+        (min, max) = campaign().contributionRangeFor(alice);
+        assertEq(0, min);
+        assertEq(0, max);
+
+        (min, max) = campaign().contributionRangeFor(bob);
+        assertEq(1, min);
+        assertEq(0.01 ether, max);
+
+        // Remaining deposits < min contribution
+        (min, max) = campaign().contributionRangeFor(charlie);
+        assertEq(0, min);
+        assertEq(0, max);
+
+        vm.startPrank(bob);
+        campaign().contributeEth{value: 0.01 ether}();
+        vm.stopPrank();
+
+        assertTrue(campaign().isGoalMaxMet());
+        assertFalse(campaign().isContributionAllowed());
+    }
+
     function testBigThenSmallContribution() public multiTokenTest {
         dealMulti(alice, 1e18);
         deposit(alice, 3e17);
