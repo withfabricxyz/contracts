@@ -11,7 +11,7 @@ import "./CrowdFinancingV1.sol";
  * @title Fabric Crowd Financing Factory Contract
  * @author Fabric Inc.
  *
- * A factory which leverages Clones to deploy campaigns.
+ * @dev A factory which leverages Clones to deploy Fabric Crowd Financing contracts
  *
  */
 contract CrowdFinancingV1Factory is Ownable {
@@ -20,31 +20,31 @@ contract CrowdFinancingV1Factory is Ownable {
         _;
     }
 
-    // The event emitted upon a successful Campaign deployment
+    /// @dev Emitted upon a successful Campaign deployment
     event Deployment(uint64 nonce, address indexed deployment);
 
-    // Emitted when the fee collector or schedule changes
+    /// @dev Emitted when the fee collector or schedule changes
     event FeeScheduleChange(address feeCollector, uint16 upfrontBips, uint16 payoutBips);
 
-    // Emitted when the creation fee minium changes
+    /// @dev Emitted when the creation fee minium changes
     event DeployFeeChange(uint256 fee);
 
-    // Emitted when the deploy fees are collected by the owner
+    /// @dev Emitted when the deploy fees are collected by the owner
     event DeployFeeTransfer(address indexed recipient, uint256 fee);
 
-    // The contract implementation address
+    /// @dev The campaign contract implementation address
     address immutable _implementation;
 
-    // The fee collector address (can be 0, no fees are collected)
+    /// @dev The fee collector address (can be 0, no fees are collected)
     address private _feeCollector;
 
-    // The upfront fee (See CrowdFinancingV1)
+    /// @dev The upfront fee (See CrowdFinancingV1)
     uint16 private _feeTransferBips;
 
-    // The payout fee (See CrowdFinancingV1)
+    /// @dev The payout fee (See CrowdFinancingV1)
     uint16 private _feeYieldBips;
 
-    // Fee to collect upon creation
+    /// @dev Fee to collect upon deployment
     uint256 private _feeDeployMin;
 
     /**
@@ -59,7 +59,7 @@ contract CrowdFinancingV1Factory is Ownable {
     }
 
     /**
-     * @notice Deploys a new CrowdFinancingV1 contract
+     * @dev Deploys a new CrowdFinancingV1 contract
      *
      * @param externalRef An optional reference value emitted in the deploy event for association
      * @param recipient the address of the recipient, where funds are sent on success
@@ -70,6 +70,8 @@ contract CrowdFinancingV1Factory is Ownable {
      * @param holdOff the number of seconds to wait until the fund starts
      * @param duration the runtime of the campaign, in seconds
      * @param erc20TokenAddr the address of the ERC20 token used for payments, or 0 address for native token
+     *
+     * @return the address of the deployed CrowdFinancingV1 contract
      */
     function deployCampaign(
         uint64 externalRef,
@@ -107,7 +109,7 @@ contract CrowdFinancingV1Factory is Ownable {
     }
 
     /**
-     * Owner Only: Transfer accumulated fees
+     * @dev Owner Only: Transfer accumulated fees
      */
     function transferDeployFees(address recipient) external onlyOwner {
         uint256 amount = address(this).balance;
@@ -118,7 +120,7 @@ contract CrowdFinancingV1Factory is Ownable {
     }
 
     /**
-     * Update the fee schedule for future deployments
+     * @dev Owner Only: Update the fee schedule for future deployments
      *
      * @param feeCollector the address of the fee collector, or the 0 address if no fees are collected
      * @param feeTransferBips the upfront fee in basis points, calculated during processing
@@ -132,7 +134,7 @@ contract CrowdFinancingV1Factory is Ownable {
     }
 
     /**
-     * Update the deploy fee.
+     * @dev Owner Only: Update the deploy fee.
      *
      * @param minFeeAmount the amount of wei required to deploy a campaign
      */
@@ -142,9 +144,18 @@ contract CrowdFinancingV1Factory is Ownable {
     }
 
     /**
-     * Fetch the fee schedule for campaigns and the deploy fee
+     * @dev Fetch the fee schedule for campaigns and the deploy fee
+     *
+     * @return collector the address of the fee collector, or the 0 address if no fees are collected
+     * @return transferFee the upfront fee in basis points, calculated during transfer
+     * @return yieldFee the payout fee in basis points. Dilutes the cap table for fee collection
+     * @return deployFee the amount of wei required to deploy a campaign
      */
-    function feeSchedule() external view returns (address, uint16, uint16, uint256) {
+    function feeSchedule()
+        external
+        view
+        returns (address collector, uint16 transferFee, uint16 yieldFee, uint256 deployFee)
+    {
         return (_feeCollector, _feeTransferBips, _feeYieldBips, _feeDeployMin);
     }
 }
