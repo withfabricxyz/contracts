@@ -28,9 +28,9 @@ contract CrowdFinancingV1FactoryTest is BaseCampaignTest {
     function testDeployment() public {
         vm.startPrank(alice);
         vm.expectEmit(false, false, false, true, address(factory));
-        emit Deployment(1, address(1));
+        emit Deployment(address(1));
 
-        address deployment = factory.deployCampaign(1, recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+        address deployment = factory.deployCampaign(recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
         uint256 time = block.timestamp;
 
         CrowdFinancingV1 campaign = CrowdFinancingV1(deployment);
@@ -84,7 +84,7 @@ contract CrowdFinancingV1FactoryTest is BaseCampaignTest {
     function testDeployFeeTooLow() public {
         factory.updateMinimumDeployFee(1e12);
         vm.expectRevert("Insufficient ETH to deploy");
-        factory.deployCampaign(1, recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+        factory.deployCampaign(recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
     }
 
     function testDeployFeeCollectNone() public {
@@ -94,13 +94,13 @@ contract CrowdFinancingV1FactoryTest is BaseCampaignTest {
 
     function testDeployFeeCapture() public {
         factory.updateMinimumDeployFee(1e12);
-        factory.deployCampaign{value: 1e12}(1, recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+        factory.deployCampaign{value: 1e12}(recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
         assertEq(1e12, address(factory).balance);
     }
 
     function testDeployFeeTransfer() public {
         factory.updateMinimumDeployFee(1e12);
-        factory.deployCampaign{value: 1e12}(1, recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+        factory.deployCampaign{value: 1e12}(recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
         vm.expectEmit(true, true, true, true, address(factory));
         emit DeployFeeTransfer(alice, 1e12);
         uint256 beforeBalance = alice.balance;
@@ -111,7 +111,7 @@ contract CrowdFinancingV1FactoryTest is BaseCampaignTest {
 
     function testDeployFeeTransferNonOwner() public {
         factory.updateMinimumDeployFee(1e12);
-        factory.deployCampaign{value: 1e12}(1, recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+        factory.deployCampaign{value: 1e12}(recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
         vm.startPrank(alice);
         vm.expectRevert("Ownable: caller is not the owner");
         factory.transferDeployFees(alice);
@@ -119,7 +119,7 @@ contract CrowdFinancingV1FactoryTest is BaseCampaignTest {
 
     function testDeployFeeTransferBadReceiver() public {
         factory.updateMinimumDeployFee(1e12);
-        factory.deployCampaign{value: 1e12}(1, recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
+        factory.deployCampaign{value: 1e12}(recipient, 2e18, 5e18, 2e17, 1e18, 0, 60 * 60, address(0));
         vm.expectRevert("Failed to transfer Ether");
         factory.transferDeployFees(address(this));
     }
