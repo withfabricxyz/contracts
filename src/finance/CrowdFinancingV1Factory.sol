@@ -21,7 +21,7 @@ contract CrowdFinancingV1Factory is Ownable {
     }
 
     /// @dev Emitted upon a successful Campaign deployment
-    event Deployment(uint64 nonce, address indexed deployment);
+    event Deployment(address indexed deployment);
 
     /// @dev Emitted when the fee collector or schedule changes
     event FeeScheduleChange(address feeCollector, uint16 upfrontBips, uint16 payoutBips);
@@ -61,7 +61,6 @@ contract CrowdFinancingV1Factory is Ownable {
     /**
      * @dev Deploys a new CrowdFinancingV1 contract
      *
-     * @param externalRef An optional reference value emitted in the deploy event for association
      * @param recipient the address of the recipient, where funds are sent on success
      * @param minGoal the minimum funding amount acceptable for successful financing
      * @param maxGoal the maximum funding amount accepted for the financing round
@@ -74,7 +73,6 @@ contract CrowdFinancingV1Factory is Ownable {
      * @return the address of the deployed CrowdFinancingV1 contract
      */
     function deployCampaign(
-        uint64 externalRef,
         address recipient,
         uint256 minGoal,
         uint256 maxGoal,
@@ -103,7 +101,7 @@ contract CrowdFinancingV1Factory is Ownable {
             _feeYieldBips
         );
 
-        emit Deployment(externalRef, deployment);
+        emit Deployment(deployment);
 
         return deployment;
     }
