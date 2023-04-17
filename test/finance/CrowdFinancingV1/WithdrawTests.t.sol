@@ -58,7 +58,7 @@ contract WithdrawTests is BaseCampaignTest {
 
         mt.setTransferReturn(false);
         vm.startPrank(alice);
-        vm.expectRevert("ERC20 transfer failed");
+        vm.expectRevert("SafeERC20: ERC20 operation did not succeed");
         campaign().withdraw();
         vm.stopPrank();
     }
@@ -70,7 +70,7 @@ contract WithdrawTests is BaseCampaignTest {
 
         mt.setTransferReturn(false);
         vm.startPrank(alice);
-        vm.expectRevert("ERC20 transfer failed");
+        vm.expectRevert("SafeERC20: ERC20 operation did not succeed");
         campaign().withdraw();
         vm.stopPrank();
     }

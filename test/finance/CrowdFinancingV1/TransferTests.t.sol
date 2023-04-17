@@ -79,7 +79,7 @@ contract TransferTests is BaseCampaignTest {
 
         mt.setTransferReturn(false);
         vm.startPrank(alice);
-        vm.expectRevert("ERC20: Fee transfer failed");
+        vm.expectRevert("SafeERC20: ERC20 operation did not succeed");
         campaign().transferBalanceToRecipient();
     }
 
@@ -91,7 +91,7 @@ contract TransferTests is BaseCampaignTest {
 
         mt.setTransferReturn(false);
         vm.startPrank(alice);
-        vm.expectRevert("ERC20: Transfer failed");
+        vm.expectRevert("SafeERC20: ERC20 operation did not succeed");
         campaign().transferBalanceToRecipient();
     }
 

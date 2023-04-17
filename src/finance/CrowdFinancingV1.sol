@@ -3,6 +3,7 @@
 pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin-upgradeable/contracts/proxy/utils/Initializable.sol";
 import "@openzeppelin-upgradeable/contracts/security/ReentrancyGuardUpgradeable.sol";
@@ -319,7 +320,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         if (feeAmount > 0) {
             emit TransferContributions(_feeRecipient, feeAmount);
             if (_erc20) {
-                require(_token.transfer(_feeRecipient, feeAmount), "ERC20: Fee transfer failed");
+                SafeERC20.safeTransfer(_token, _feeRecipient, feeAmount);
             } else {
                 (bool sent,) = payable(_feeRecipient).call{value: feeAmount}("");
                 require(sent, "Failed to transfer Ether");
@@ -328,7 +329,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
 
         emit TransferContributions(_recipientAddress, transferAmount);
         if (_erc20) {
-            require(_token.transfer(_recipientAddress, transferAmount), "ERC20: Transfer failed");
+            SafeERC20.safeTransfer(_token, _recipientAddress, transferAmount);
         } else {
             (bool sent,) = payable(_recipientAddress).call{value: transferAmount}("");
             require(sent, "Failed to transfer Ether");
@@ -506,7 +507,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         emit Withdraw(account, amount);
 
         if (_erc20) {
-            require(_token.transfer(account, amount), "ERC20 transfer failed");
+            SafeERC20.safeTransfer(_token, account, amount);
         } else {
             (bool sent,) = payable(account).call{value: amount}("");
             require(sent, "Failed to transfer Ether");
@@ -524,7 +525,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         emit Withdraw(account, amount);
 
         if (_erc20) {
-            require(_token.transfer(account, amount), "ERC20 transfer failed");
+            SafeERC20.safeTransfer(_token, account, amount);
         } else {
             (bool sent,) = payable(account).call{value: amount}("");
             require(sent, "Failed to transfer Ether");
@@ -548,7 +549,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         uint256 allowed = _token.allowance(msg.sender, address(this));
         require(amount <= allowed, "Amount exceeds token allowance");
         uint256 priorBalance = _token.balanceOf(address(this));
-        require(_token.transferFrom(account, address(this), amount), "ERC20 transfer failed");
+        SafeERC20.safeTransferFrom(_token, account, address(this), amount);
         uint256 postBalance = _token.balanceOf(address(this));
         return postBalance - priorBalance;
     }

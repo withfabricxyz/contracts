@@ -187,7 +187,7 @@ contract ContributionTests is BaseCampaignTest {
         mt.setTransferReturn(false);
         vm.startPrank(alice);
         token().approve(address(campaign()), 1e18);
-        vm.expectRevert("ERC20 transfer failed");
+        vm.expectRevert("SafeERC20: ERC20 operation did not succeed");
         campaign().contributeERC20(1e18);
     }
 }
