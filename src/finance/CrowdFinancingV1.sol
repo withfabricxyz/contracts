@@ -645,6 +645,25 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         return true;
     }
 
+    /// See ERC20.increaseAllowance
+    function increaseAllowance(address spender, uint256 addedValue) external virtual returns (bool) {
+        address owner = msg.sender;
+        _approve(owner, spender, allowance(owner, spender) + addedValue);
+        return true;
+    }
+
+    /// See ERC20.decreaseAllowance
+    function decreaseAllowance(address spender, uint256 subtractedValue) external virtual returns (bool) {
+        address owner = msg.sender;
+        uint256 currentAllowance = allowance(owner, spender);
+        require(currentAllowance >= subtractedValue, "ERC20: decreased allowance below zero");
+        unchecked {
+            _approve(owner, spender, currentAllowance - subtractedValue);
+        }
+
+        return true;
+    }
+
     ///////////////////////////////////////////
     // Public/External Views
     ///////////////////////////////////////////

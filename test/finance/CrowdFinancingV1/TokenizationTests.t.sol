@@ -104,4 +104,16 @@ contract TokenizationTests is BaseCampaignTest {
         campaign().transferFrom(alice, bob, 2e18);
         vm.stopPrank();
     }
+
+    function testIncreaseDecreaseAllowance() public ethTest {
+        fundAndTransfer();
+        vm.startPrank(alice);
+        campaign().increaseAllowance(bob, 5);
+        assertEq(5, campaign().allowance(alice, bob));
+        campaign().decreaseAllowance(bob, 5);
+        assertEq(0, campaign().allowance(alice, bob));
+        vm.expectRevert("ERC20: decreased allowance below zero");
+        campaign().decreaseAllowance(bob, 5);
+        vm.stopPrank();
+    }
 }
