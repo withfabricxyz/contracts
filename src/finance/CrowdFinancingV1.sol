@@ -343,7 +343,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         if (_feeYieldBips == 0) {
             return 0;
         }
-        uint256 feeAllocation = (_contributionTotal * _feeYieldBips) / (MAX_BIPS);
+        uint256 feeAllocation = ((_contributionTotal * _feeYieldBips) / (MAX_BIPS - _feeYieldBips));
 
         _contributions[_feeRecipient] += feeAllocation;
         _contributionTotal += feeAllocation;
