@@ -8,10 +8,10 @@ import "./CrowdFinancingV1.sol";
 
 /**
  *
- * @title Fabric Crowd Financing Factory Contract
+ * @title Fabric CrowdFinancing Factory Contract
  * @author Fabric Inc.
  *
- * @dev A factory which leverages Clones to deploy Fabric Crowd Financing contracts
+ * @dev A factory which leverages Clones to deploy Fabric CrowdFinancing contracts
  *
  */
 contract CrowdFinancingV1Factory is Ownable {
@@ -38,10 +38,10 @@ contract CrowdFinancingV1Factory is Ownable {
     /// @dev The fee collector address (can be 0, no fees are collected)
     address private _feeCollector;
 
-    /// @dev The upfront fee (See CrowdFinancingV1)
+    /// @dev The transfer fee (See CrowdFinancingV1)
     uint16 private _feeTransferBips;
 
-    /// @dev The payout fee (See CrowdFinancingV1)
+    /// @dev The yield fee (See CrowdFinancingV1)
     uint16 private _feeYieldBips;
 
     /// @dev Fee to collect upon deployment
@@ -61,14 +61,14 @@ contract CrowdFinancingV1Factory is Ownable {
     /**
      * @dev Deploys a new CrowdFinancingV1 contract
      *
-     * @param recipient the address of the recipient, where funds are sent on success
-     * @param minGoal the minimum funding amount acceptable for successful financing
+     * @param recipient the address of the recipient, to which funds can be transferred after success
+     * @param minGoal the minimum funding amount acceptable for a successful campaign
      * @param maxGoal the maximum funding amount accepted for the financing round
-     * @param minContribution the minimum deposit an account can make in one deposit
-     * @param maxContribution the maximum deposit an account can make in one or more deposits
-     * @param holdOff the number of seconds to wait until the fund starts
+     * @param minContribution the minimum initial contribution an account can make
+     * @param maxContribution the maximum contribution an account can make
+     * @param holdOff the number of seconds to wait until the campaign starts
      * @param duration the runtime of the campaign, in seconds
-     * @param erc20TokenAddr the address of the ERC20 token used for payments, or 0 address for native token
+     * @param erc20TokenAddr the address of the ERC20 token used for payments, or the 0 address for native token
      *
      * @return the address of the deployed CrowdFinancingV1 contract
      */

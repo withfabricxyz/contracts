@@ -10,7 +10,7 @@ import "@openzeppelin-upgradeable/contracts/security/ReentrancyGuardUpgradeable.
 
 /**
  *
- * Each instance of a Crowd Financing Contract represents a single campaign with a goal
+ * Each instance of a Crowdfinancing Contract represents a single campaign with a goal
  * of raising funds for a specific purpose. The contract is deployed by the creator through
  * the CrowdFinancingV1Factory contract. The creator specifies the recipient address, the
  * token to use for payments, the minimum and maximum funding goals, the minimum and maximum
@@ -57,21 +57,21 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     }
 
     /// @dev Max campaign duration: 90 Days
-    uint256 private constant MAX_DURATION_SECONDS = 7776000;
+    uint256 private constant MAX_DURATION_SECONDS = 90 days;
 
     /// @dev Min campaign duration: 30 minutes
-    uint256 private constant MIN_DURATION_SECONDS = 1800;
+    uint256 private constant MIN_DURATION_SECONDS = 30 minutes;
 
     /// @dev Allow a campaign to be deployed where the start time is up to one minute in the past
     uint256 private constant PAST_START_TOLERANCE_SECONDS = 60;
 
-    /// @dev Maximum fee basis points
-    uint16 private constant MAX_FEE_BIPS = 2500;
+    /// @dev Maximum fee basis points (12.5%)
+    uint16 private constant MAX_FEE_BIPS = 1250;
 
     /// @dev Maximum basis points
     uint16 private constant MAX_BIPS = 10_000;
 
-    /// @dev Emitted when an account contributions funds to the contract
+    /// @dev Emitted when an account contributes funds to the contract
     event Contribution(address indexed account, uint256 numTokens);
 
     /// @dev Emitted when an account withdraws their initial contribution or yield balance
@@ -84,7 +84,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     /// @dev Emitted on processing if time has elapsed and the target was not met
     event Fail();
 
-    /// @dev Emitted when makePayment is invoked by the recipient
+    /// @dev Emitted when yieldEth or yieldERC20 are called
     event Payout(address indexed account, uint256 numTokens);
 
     /// @dev A state enum to track the current state of the campaign
@@ -100,7 +100,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     /// @dev The address of the recipient in the event of a successful campaign
     address private _recipientAddress;
 
-    /// @dev The token used for payments (optional)
+    /// @dev The token used for funding (optional)
     IERC20 private _token;
 
     /// @dev The minimum funding goal to meet for a successful campaign
@@ -115,10 +115,10 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     /// @dev The maximum tokens an account can contribute
     uint256 private _maxContribution;
 
-    /// @dev The start timestamp for the fund
+    /// @dev The start timestamp for the campaign
     uint256 private _startTimestamp;
 
-    /// @dev The end timestamp for the fund
+    /// @dev The end timestamp for the campaign
     uint256 private _endTimestamp;
 
     /// @dev The total amount contributed by all accounts
@@ -141,10 +141,10 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     /// @dev The optional address of the fee recipient
     address private _feeRecipient;
 
-    /// @dev The fee in basis points, transferred to the fee recipient upon transfer
+    /// @dev The transfer fee in basis points, sent to the fee recipient upon transfer
     uint16 private _feeTransferBips;
 
-    /// @dev The fee in basis points, used to dilute the cap table upon transfer
+    /// @dev The yield fee in basis points, used to dilute the cap table upon transfer
     uint16 private _feeYieldBips;
 
     /// @dev Track the number of tokens sent via yield calls
@@ -165,11 +165,11 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
      * @param recipient the address of the recipient, where funds are transferred when conditions are met
      * @param minGoal the minimum funding goal for the financing round
      * @param maxGoal the maximum funding goal for the financing round
-     * @param minContribution the minimum contribution an account can make
+     * @param minContribution the minimum initial contribution an account can make
      * @param maxContribution the maximum contribution an account can make
      * @param startTimestamp the UNIX time in seconds denoting when contributions can start
      * @param endTimestamp the UNIX time in seconds denoting when contributions are no longer allowed
-     * @param erc20TokenAddr the address of the ERC20 token used for payments, or 0 address for native token (ETH)
+     * @param erc20TokenAddr the address of the ERC20 token used for funding, or the 0 address for native token (ETH)
      * @param feeRecipientAddr the address of the fee recipient, or the 0 address if no fees are collected
      * @param feeTransferBips the transfer fee in basis points, collected during the transfer call
      * @param feeYieldBips the yield fee in basis points. Dilutes the cap table for the fee recipient.
@@ -238,6 +238,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
      *
      *         #### Events
      *         - Emits a {Contribution} event
+     *         - Emits a {Transfer} event (ERC20)
      *
      *         #### Requirements
      *         - `amount` must be within range of min and max contribution for account
@@ -258,6 +259,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
      *
      *         #### Events
      *         - Emits a {Contribution} event
+     *         - Emits a {Transfer} event (ERC20)
      *
      *         #### Requirements
      *         - `msg.value` must be within range of min and max contribution for account
@@ -279,6 +281,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         _contributions[account] += amount;
         _contributionTotal += amount;
         emit Contribution(account, amount);
+        emit Transfer(address(0), account, amount);
     }
 
     /**
@@ -310,11 +313,11 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
 
         _state = State.FUNDED;
 
-        uint256 feeAmount = calculateTransferFee();
+        uint256 feeAmount = _calculateTransferFee();
         uint256 transferAmount = _contributionTotal - feeAmount;
 
         // This can mutate _contributionTotal, so that withdraws don't over withdraw
-        allocateYieldFee();
+        _allocateYieldFee();
 
         // If any transfer fee is present, pay that out to the fee recipient
         if (feeAmount > 0) {
@@ -340,7 +343,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
      * @dev Dilutes supply by allocating tokens to the fee collector, allowing for
      *      withdraws of yield
      */
-    function allocateYieldFee() private returns (uint256) {
+    function _allocateYieldFee() private returns (uint256) {
         if (_feeYieldBips == 0) {
             return 0;
         }
@@ -353,9 +356,9 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     }
 
     /**
-     * @dev Calculates a fee to transfer to the fee collector upon processing
+     * @dev Calculates a fee to transfer to the fee collector
      */
-    function calculateTransferFee() private view returns (uint256) {
+    function _calculateTransferFee() private view returns (uint256) {
         if (_feeTransferBips == 0) {
             return 0;
         }
@@ -381,7 +384,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     ///////////////////////////////////////////
 
     /**
-     * @notice Yield ERC20 tokens to all token holders in proportion to their balance
+     * @notice Yield ERC20 tokens to all campaign token holders in proportion to their token balance
      *
      *         #### Requirements
      *         - `amount` must be greater than 0
@@ -443,7 +446,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     /**
      * @return The total amount of tokens paid back to a given contributor
      */
-    function payoutsMadeTo(address account) private view returns (uint256) {
+    function _payoutsMadeTo(address account) private view returns (uint256) {
         if (_contributionTotal == 0) {
             return 0;
         }
@@ -456,7 +459,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
      * @return The withdrawable amount of tokens for a given account, attributable to yield
      */
     function yieldBalanceOf(address account) public view returns (uint256) {
-        return payoutsMadeTo(account) - withdrawsOf(account);
+        return _payoutsMadeTo(account) - withdrawsOf(account);
     }
 
     /**
@@ -465,7 +468,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
      * @return The total amount of tokens earned by the given account through yield
      */
     function yieldTotalOf(address account) public view returns (uint256) {
-        uint256 _payout = payoutsMadeTo(account);
+        uint256 _payout = _payoutsMadeTo(account);
         if (_payout <= _contributions[account]) {
             return 0;
         }
@@ -474,37 +477,39 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
 
     /**
      * @notice Withdraw all available funds to the caller if withdraws are allowed and
-     *         the caller has a contribution balance (failed), or a yield balance (funded)
+     *         the caller has a contribution balance (campaign failed), or a yield balance (campaign succeeded)
      *
      *         #### Events
      *         - Emits a {Withdraw} event with amount = the amount withdrawn
+     *         - Emits a {Transfer} event representing a token burn if the campaign failed
      */
     function withdraw() external {
         require(isWithdrawAllowed(), "Withdraw not allowed");
 
         // Set the state to failed
-        if (isEnded() && _state == State.FUNDING && !isGoalMinMet()) {
+        if (_state == State.FUNDING) {
             _state = State.FAILED;
             emit Fail();
         }
 
         address account = msg.sender;
         if (_state == State.FUNDED) {
-            withdrawYieldBalance(account);
+            _withdrawYieldBalance(account);
         } else {
-            withdrawContribution(account);
+            _withdrawContribution(account);
         }
     }
 
     /**
      * @dev Withdraw the initial contribution for the given account
      */
-    function withdrawContribution(address account) private {
+    function _withdrawContribution(address account) private {
         uint256 amount = _contributions[account];
         require(amount > 0, "No balance");
         _contributions[account] = 0;
         _contributionTotal -= amount;
         emit Withdraw(account, amount);
+        emit Transfer(account, address(0), amount);
 
         if (_erc20) {
             SafeERC20.safeTransfer(_token, account, amount);
@@ -517,7 +522,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     /**
      * @dev Withdraw the available yield balance for the given account
      */
-    function withdrawYieldBalance(address account) private {
+    function _withdrawYieldBalance(address account) private {
         uint256 amount = yieldBalanceOf(account);
         require(amount > 0, "No balance");
         _withdraws[account] += amount;

@@ -16,9 +16,11 @@ contract ContributionTests is BaseCampaignTest {
     }
 
     function testDepositEmit() public multiTokenTest {
-        vm.expectEmit(true, false, false, true, address(campaign()));
-        emit Contribution(alice, 1e18);
         dealMulti(alice, 1e19);
+        vm.expectEmit(true, true, true, true, address(campaign()));
+        emit Contribution(alice, 1e18);
+        vm.expectEmit(true, true, true, true, address(campaign()));
+        emit Transfer(address(0), alice, 1e18);
         deposit(alice, 1e18);
     }
 

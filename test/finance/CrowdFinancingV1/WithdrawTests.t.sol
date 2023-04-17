@@ -13,11 +13,14 @@ contract WithdrawTests is BaseCampaignTest {
         dealMulti(alice, 1e19);
         deposit(alice, 1e18);
         vm.warp(campaign().endsAt());
+        assertTrue(CrowdFinancingV1.State.FUNDING == campaign().state());
         uint256 supply = campaign().totalSupply();
         vm.expectEmit(true, true, true, true, address(campaign()));
         emit Fail();
         vm.expectEmit(true, true, true, true, address(campaign()));
         emit Withdraw(address(alice), 1e18);
+        vm.expectEmit(true, true, true, true, address(campaign()));
+        emit Transfer(alice, address(0), 1e18);
         withdraw(alice);
         assertEq(0, campaign().balanceOf(alice));
         assertEq(supply - 1e18, campaign().totalSupply());
