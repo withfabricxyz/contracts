@@ -11,6 +11,7 @@ import "@forge/console2.sol";
 abstract contract BaseCampaignTest is Test {
     event Contribution(address indexed account, uint256 numTokens);
     event TransferContributions(address indexed account, uint256 numTokens);
+    event Withdraw(address indexed account, uint256 numTokens);
     event Fail();
 
     modifier prank(address user) {

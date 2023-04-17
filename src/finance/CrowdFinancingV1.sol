@@ -502,6 +502,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         uint256 amount = _contributions[account];
         require(amount > 0, "No balance");
         _contributions[account] = 0;
+        _contributionTotal -= amount;
         emit Withdraw(account, amount);
 
         if (_erc20) {
