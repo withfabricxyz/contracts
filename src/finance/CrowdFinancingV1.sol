@@ -596,7 +596,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         // Transfer partial withdraws to balance payouts
         if (_state == State.FUNDED) {
             uint256 fromWithdraws = _withdraws[from];
-            uint256 withdrawAmount = ((fromBalance - amount) * fromWithdraws) / fromBalance;
+            uint256 withdrawAmount = (amount * fromWithdraws) / fromBalance;
             unchecked {
                 _withdraws[from] = fromWithdraws - withdrawAmount;
                 _withdraws[to] += withdrawAmount;
