@@ -193,12 +193,14 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         require(
             endTimestamp > block.timestamp && (endTimestamp - startTimestamp) < MAX_DURATION_SECONDS, "Invalid end time"
         );
-        require(minGoal > 0, "Min target must be > 0");
-        require(minGoal <= maxGoal, "Min target must be <= Max");
+        require(minGoal > 0, "Min goal must be > 0");
+        require(minGoal <= maxGoal, "Min goal must be <= Max goal");
         require(minContribution > 0, "Min contribution must be > 0");
-        require(minContribution <= maxContribution, "Min contribution must be <= Max");
-        require(minContribution <= maxGoal, "Min contribution must be <= Target Max");
-        require(minContribution < (maxGoal - minGoal), "Min contribution must be < (maxGoal - minGoal)");
+        require(minContribution <= maxContribution, "Min contribution must be <= Max contribution");
+        require(
+            minContribution < (maxGoal - minGoal) || minContribution == 1,
+            "Min contribution must be < (maxGoal - minGoal) or 1"
+        );
         require(feeTransferBips <= MAX_FEE_BIPS, "Transfer fee too high");
         require(feeYieldBips <= MAX_FEE_BIPS, "Yield fee too high");
 
