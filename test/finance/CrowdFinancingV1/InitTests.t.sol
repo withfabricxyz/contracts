@@ -78,12 +78,12 @@ contract InitTests is BaseCampaignTest {
     }
 
     function testZeroGoal() public {
-        vm.expectRevert("Min target must be > 0");
+        vm.expectRevert("Min goal must be > 0");
         _campaign.initialize(recipient, 0, 5e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
     function testImpossibleGoalRange() public {
-        vm.expectRevert("Min target must be <= Max");
+        vm.expectRevert("Min goal must be <= Max goal");
         _campaign.initialize(recipient, 5e18, 4e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
@@ -93,18 +93,17 @@ contract InitTests is BaseCampaignTest {
     }
 
     function testImpossibleDepositRange() public {
-        vm.expectRevert("Min contribution must be <= Max");
+        vm.expectRevert("Min contribution must be <= Max contribution");
         _campaign.initialize(recipient, 2e18, 5e18, 1e18, 2e17, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
-    function testDepositMaxGoalRelation() public {
-        vm.expectRevert("Min contribution must be <= Target Max");
-        _campaign.initialize(recipient, 1e18, 2e18, 2e19, 3e19, ts, ts + expirationFuture, address(0), address(0), 0, 0);
+    function testMinDepositGoalRelation() public {
+        vm.expectRevert("Min contribution must be < (maxGoal - minGoal) or 1");
+        _campaign.initialize(recipient, 2e18, 2e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
-    function testMinDepositGoalRelation() public {
-        vm.expectRevert("Min contribution must be < (maxGoal - minGoal)");
-        _campaign.initialize(recipient, 2e18, 2e18, 2e17, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
+    function testMinGoalRelationWith1() public {
+        _campaign.initialize(recipient, 2e18, 2e18, 1, 1e18, ts, ts + expirationFuture, address(0), address(0), 0, 0);
     }
 
     function testLargeUpfrontFee() public {

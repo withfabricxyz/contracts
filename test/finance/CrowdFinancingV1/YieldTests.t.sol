@@ -41,4 +41,14 @@ contract YieldTests is BaseCampaignTest {
         assertEq(0, campaign().yieldBalanceOf(alice));
         assertEq(666666666666666666, campaign().yieldBalanceOf(bob));
     }
+
+    function testYieldFees() public multiTokenFeeTest(0, 500) {
+        fundAndTransfer();
+        yield(1e18);
+        assertEq(0, balance(feeCollector));
+        withdraw(feeCollector);
+        // ~5% fee
+        assertApproxEqAbs(50000000000000000, balance(feeCollector), 1);
+        assertEq(0, campaign().yieldBalanceOf(feeCollector));
+    }
 }

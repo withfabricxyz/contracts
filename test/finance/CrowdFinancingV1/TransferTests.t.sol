@@ -52,14 +52,15 @@ contract TransferTests is BaseCampaignTest {
         assertEq(0, address(campaign()).balance);
     }
 
-    function testPayoutFees() public multiTokenFeeTest(0, 250) {
+    function testYieldFees() public multiTokenFeeTest(0, 250) {
         uint256 preSupply = campaign().totalSupply();
         assertEq(0, campaign().balanceOf(feeCollector));
         fundAndTransfer();
         assertTrue(campaign().totalSupply() > preSupply);
         assertTrue(campaign().balanceOf(feeCollector) > 0);
-        yield(1e18);
-        assertEq(24390243902439024, campaign().yieldBalanceOf(feeCollector));
+        // Dilution such that feeCollector has ~2.5% of tokens
+        assertEq(76923076923076923, campaign().balanceOf(feeCollector));
+        assertApproxEqAbs(250, (campaign().balanceOf(feeCollector) * 10_000) / campaign().totalSupply(), 1);
     }
 
     function testAllFees() public multiTokenFeeTest(100, 250) {
@@ -78,7 +79,7 @@ contract TransferTests is BaseCampaignTest {
 
         mt.setTransferReturn(false);
         vm.startPrank(alice);
-        vm.expectRevert("ERC20: Fee transfer failed");
+        vm.expectRevert("SafeERC20: ERC20 operation did not succeed");
         campaign().transferBalanceToRecipient();
     }
 
@@ -90,7 +91,7 @@ contract TransferTests is BaseCampaignTest {
 
         mt.setTransferReturn(false);
         vm.startPrank(alice);
-        vm.expectRevert("ERC20: Transfer failed");
+        vm.expectRevert("SafeERC20: ERC20 operation did not succeed");
         campaign().transferBalanceToRecipient();
     }
 
