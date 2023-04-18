@@ -7,6 +7,7 @@ import "src/finance/CrowdFinancingV1.sol";
 import "src/tokens/ERC20Token.sol";
 import "./BaseCampaignTest.t.sol";
 import "./mocks/MockToken.sol";
+import "./mocks/MockFeeToken.sol";
 
 contract ContributionTests is BaseCampaignTest {
     function testHappyPath() public multiTokenTest {
@@ -191,5 +192,28 @@ contract ContributionTests is BaseCampaignTest {
         token().approve(address(campaign()), 1e18);
         vm.expectRevert("SafeERC20: ERC20 operation did not succeed");
         campaign().contributeERC20(1e18);
+    }
+
+    function testContributionMinOnFeeTokens() public erc20Test {
+        MockFeeToken mt = new MockFeeToken("T", "T", 1e21);
+        assignCampaign(createCampaign(address(mt)));
+        dealMulti(alice, 1e18);
+        vm.startPrank(alice);
+        token().approve(address(campaign()), 1e18);
+        vm.expectRevert("Contribution amount is too low");
+        campaign().contributeERC20(2e17);
+    }
+
+    function testContributionMaxOnFeeTokens() public erc20Test {
+        MockFeeToken mt = new MockFeeToken("T", "T", 1e21);
+        assignCampaign(createCampaign(address(mt)));
+        dealMulti(alice, 1e19);
+        vm.startPrank(alice);
+        token().approve(address(campaign()), 5e18);
+        // Max contribution is 1e18, fee is 50% on token, so it should pass with 2e18
+        campaign().contributeERC20(2e18);
+        vm.expectRevert("Contribution amount is too high");
+        // Max is tracked cumulatively, so any amount should fail now
+        campaign().contributeERC20(2);
     }
 }

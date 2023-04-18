@@ -250,7 +250,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
      * @param amount the amount of ERC20 tokens to contribute
      *
      */
-    function contributeERC20(uint256 amount) external erc20Only contributionGuard(amount) nonReentrant {
+    function contributeERC20(uint256 amount) external erc20Only nonReentrant {
         _addContribution(msg.sender, _transferSafe(msg.sender, amount));
     }
 
@@ -267,7 +267,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
      *         - contributions must be allowed
      *         - the contract must be configured to work with ETH
      */
-    function contributeEth() external payable ethOnly contributionGuard(msg.value) {
+    function contributeEth() external payable ethOnly {
         _addContribution(msg.sender, msg.value);
     }
 
@@ -277,7 +277,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
      * @param account the account to add the contribution to
      * @param amount the amount of the contribution
      */
-    function _addContribution(address account, uint256 amount) private {
+    function _addContribution(address account, uint256 amount) private contributionGuard(amount) {
         _contributions[account] += amount;
         _contributionTotal += amount;
         emit Contribution(account, amount);
