@@ -56,6 +56,11 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
         _;
     }
 
+    /// @dev If transfer doesn't occur within the TRANSFER_WINDOW, the campaign can be unlocked
+    /// and put into a failed state for withdraws. This is to prevent a campaign from being
+    /// locked forever if the recipient addresses are compromised.
+    uint256 private constant TRANSFER_WINDOW = 90 days;
+
     /// @dev Max campaign duration: 90 Days
     uint256 private constant MAX_DURATION_SECONDS = 90 days;
 
@@ -81,7 +86,7 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
     /// fees are transferred to the fee collector, if specified
     event TransferContributions(address indexed account, uint256 numTokens);
 
-    /// @dev Emitted on processing if time has elapsed and the target was not met
+    /// @dev Emitted when the campaign is marked as failed
     event Fail();
 
     /// @dev Emitted when yieldEth or yieldERC20 are called
@@ -379,6 +384,27 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
      */
     function isGoalMaxMet() public view returns (bool) {
         return _contributionTotal >= _goalMax;
+    }
+
+    ///////////////////////////////////////////
+    // Unlocking Funds After Failed Transfer
+    ///////////////////////////////////////////
+
+    /**
+     * @notice In the event that a transfer fails due to recipient contract behavior, the campaign
+     *         can be unlocked (marked as failed) to allow contributors to withdraw their funds. This can only
+     *         occur if the state of the campaign is FUNDING and the transfer window
+     *         has expired. Note: Recipient should invoke transferBalanceToRecipient immediately upon success
+     *         to prevent this function from being callable. This is a safety mechanism to prevent
+     *         permanent loss of funds.
+     *
+     *         #### Events
+     *         - Emits {Fail} event
+     */
+    function unlockFailedFunds() external {
+        require(isUnlockAllowed(), "Funds cannot be unlocked");
+        _state = State.FAILED;
+        emit Fail();
     }
 
     ///////////////////////////////////////////
@@ -806,5 +832,13 @@ contract CrowdFinancingV1 is Initializable, ReentrancyGuardUpgradeable, IERC20 {
      */
     function feeRecipientAddress() external view returns (address) {
         return _feeRecipient;
+    }
+
+    /**
+     * @return true if the funds are unlockable, which means the campaign succeeded, but transfer
+     *              failed to occur within the transfer window
+     */
+    function isUnlockAllowed() public view returns (bool) {
+        return _state == State.FUNDING && block.timestamp >= _endTimestamp + TRANSFER_WINDOW;
     }
 }
