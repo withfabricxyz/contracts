@@ -7,8 +7,8 @@ import "src/manifest/ManifestV1.sol";
 
 contract ManifestV1Test is Test {
     // error NoActiveSubscription(address account);
-    event SubscriptionFunded(address indexed account, uint256 tokensTransferred, uint256 timeRemaining);
-    event SubscriptionCanceled(address indexed account, uint256 tokensTransferred, uint256 timeReclaimed);
+    event SubscriptionFunded(address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timePurchased);
+    event SubscriptionCanceled(address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timeReclaimed);
     event CreatorWithdraw(address indexed account, uint256 tokensTransferred);
 
     modifier prank(address user) {
@@ -48,7 +48,7 @@ contract ManifestV1Test is Test {
 
     function testPurchase() public prank(alice) {
         vm.expectEmit(true, true, false, true, address(manifest));
-        emit SubscriptionFunded(alice, 1e18, 1e18 / 2 - block.timestamp);
+        emit SubscriptionFunded(alice, 1, 1e18, 1e18 / 2);
         manifest.purchase{value: 1e18}(1e18);
         assertEq(address(manifest).balance, 1e18);
         assertEq(manifest.timeBalanceOf(alice), 5e17);
@@ -92,7 +92,7 @@ contract ManifestV1Test is Test {
         uint256 balance = alice.balance;
         assertEq(manifest.timeBalanceOf(alice), 4e17);
         vm.expectEmit(true, true, false, true, address(manifest));
-        emit SubscriptionCanceled(alice, 8e17, 4e17);
+        emit SubscriptionCanceled(alice, 1, 8e17, 4e17);
         manifest.cancelSubscription();
         assertEq(manifest.timeBalanceOf(alice), 0);
         assertEq(alice.balance, balance + 8e17);

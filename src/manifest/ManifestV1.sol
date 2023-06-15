@@ -15,10 +15,10 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable {
     event CreatorWithdraw(address indexed account, uint256 tokensTransferred);
 
     /// @dev Emitted when a subscriber purchases additional time
-    event SubscriptionFunded(address indexed account, uint256 tokensTransferred, uint256 timeRemaining);
+    event SubscriptionFunded(address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timePurchased);
 
     /// @dev Emitted when a subscriber cancels and reclaims their remaining time and tokens
-    event SubscriptionCanceled(address indexed account, uint256 tokensTransferred, uint256 timeReclaimed);
+    event SubscriptionCanceled(address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timeReclaimed);
 
     // The subscription struct which holds the state of a subscription for an account
     struct Subscription {
@@ -92,7 +92,7 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable {
             sub.secondsPurchased += tv;
             _subscriptions[account] = sub;
         }
-        emit SubscriptionFunded(account, amount, sub.secondsPurchased - sub.timeOffset);
+        emit SubscriptionFunded(account, sub.tokenId, amount, tv);
     }
 
     function cancelSubscription(uint256 tokenId) external payable {
@@ -110,7 +110,7 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable {
 
         uint256 tokens = balance * _tokensPerSecond;
 
-        emit SubscriptionCanceled(account, tokens, balance);
+        emit SubscriptionCanceled(account, _subscriptions[account].tokenId, tokens, balance);
         (bool sent,) = payable(account).call{value: tokens}("");
         require(sent, "Failed to transfer Ether");
     }
