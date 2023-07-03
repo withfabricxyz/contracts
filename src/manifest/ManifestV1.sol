@@ -5,20 +5,25 @@ pragma solidity 0.8.17;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import "@openzeppelin-upgradeable/contracts/security/PausableUpgradeable.sol";
 import "@openzeppelin-upgradeable/contracts/token/ERC721/ERC721Upgradeable.sol";
 import "@forge/console2.sol";
 
-contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable {
+contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpgradeable {
     using SafeERC20 for IERC20;
 
     /// @dev Emitted when the owner withdraws available funds
     event CreatorWithdraw(address indexed account, uint256 tokensTransferred);
 
-    /// @dev Emitted when a subscriber purchases additional time
-    event SubscriptionFunded(address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timePurchased);
+    /// @dev Emitted when a subscriber purchases time
+    event SubscriptionFunded(
+        address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timePurchased
+    );
 
-    /// @dev Emitted when a subscriber cancels and reclaims their remaining time and tokens
-    event SubscriptionCanceled(address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timeReclaimed);
+    /// @dev Emitted when the creator refunds a subscribers remaining time
+    event SubscriptionRefund(
+        address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timeReclaimed
+    );
 
     // The subscription struct which holds the state of a subscription for an account
     struct Subscription {
@@ -27,16 +32,15 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable {
         uint256 timeOffset;
     }
 
-    // The cost of one second in denominated token (wei or other base unit)
-    uint256 private _tokensPerSecond;
-    uint256 private _withdrawn;
-    uint256 private _tokenCounter;
     string private _baseUri;
 
+    // The cost of one second in denominated token (wei or other base unit)
+    uint256 private _tokensPerSecond;
     IERC20 private _token;
-    bool private _erc20;
 
-    // IERC20 private _token;
+    uint256 private _tokensIn;
+    uint256 private _tokensOut;
+    uint256 private _tokenCounter;
 
     mapping(address => Subscription) private _subscriptions;
 
@@ -59,10 +63,10 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable {
     ) public initializer {
         __ERC721_init(name, symbol);
         _transferOwnership(owner);
+        __Pausable_init_unchained();
         _baseUri = baseUri;
         _tokensPerSecond = tokensPerSecond;
         _token = IERC20(erc20TokenAddr);
-        _erc20 = erc20TokenAddr != address(0);
     }
 
     /////////////////////////
@@ -70,9 +74,12 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable {
     /////////////////////////
 
     function purchase(uint256 amount) external payable {
-        address account = msg.sender;
-        require(msg.value == amount, "Err: incorrect amount");
-        _purchase(account, amount);
+        purchaseFor(msg.sender, amount);
+    }
+
+    function purchaseFor(address account, uint256 amount) public payable whenNotPaused {
+        uint256 finalAmount = _transferIn(account, amount);
+        _purchase(account, finalAmount);
     }
 
     function _purchase(address account, uint256 amount) internal {
@@ -95,26 +102,6 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable {
         emit SubscriptionFunded(account, sub.tokenId, amount, tv);
     }
 
-    function cancelSubscription(uint256 tokenId) external payable {
-        _cancel(_ownerOf(tokenId));
-    }
-
-    function cancelSubscription() external {
-        _cancel(msg.sender);
-    }
-
-    function _cancel(address account) internal {
-        uint256 balance = timeBalanceOf(account);
-        require(balance > 0, "NoActiveSubscription");
-        _subscriptions[account].secondsPurchased -= balance;
-
-        uint256 tokens = balance * _tokensPerSecond;
-
-        emit SubscriptionCanceled(account, _subscriptions[account].tokenId, tokens, balance);
-        (bool sent,) = payable(account).call{value: tokens}("");
-        require(sent, "Failed to transfer Ether");
-    }
-
     /////////////////////////
     // Creator Calls
     /////////////////////////
@@ -123,29 +110,58 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable {
     function withdraw() external payable onlyOwner {
         uint256 balance = creatorBalance();
         require(balance > 0, "No Balance");
-        _withdrawn += balance;
-
         emit CreatorWithdraw(msg.sender, balance);
-        (bool sent,) = payable(msg.sender).call{value: balance}("");
-        require(sent, "Failed to transfer Ether");
+        _transferOut(msg.sender, balance);
     }
 
-    function pausePurchases() external onlyOwner {}
-
-    // function setTokensPerSecond(uint256 tokensPerSecond) external onlyOwner {
-    //     _tokensPerSecond = tokensPerSecond;
-    // }
-
-    function _nextTokenId() internal returns (uint256) {
-        _tokenCounter += 1;
-        return _tokenCounter;
+    function refund(address account) external onlyOwner {
+        Subscription memory sub = _subscriptions[account];
+        require(sub.secondsPurchased > 0, "NoActiveSubscription");
+        uint256 balance = timeBalanceOf(account);
+        sub.secondsPurchased -= balance;
+        _subscriptions[account] = sub;
+        uint256 tokens = balance * _tokensPerSecond;
+        emit SubscriptionRefund(account, sub.tokenId, tokens, balance);
+        _transferOut(account, tokens);
     }
 
-    /**
-     * @dev See {IERC721Metadata-tokenURI}.
-     */
-    function _baseURI() internal view override returns (string memory) {
-        return _baseUri;
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    ////////////////////////
+    // Transfers
+    ////////////////////////
+
+    function _transferIn(address from, uint256 amount) internal returns (uint256) {
+        uint256 finalAmount = amount;
+        if (isERC20()) {
+            require(msg.value == 0, "Native tokens not accepted for ERC20 subscriptions");
+            uint256 balance = _token.balanceOf(from);
+            uint256 allowance = _token.allowance(from, address(this));
+            require(balance >= amount && allowance >= amount, "Insufficient Balance or Allowance");
+            _token.safeTransferFrom(from, address(this), amount);
+        } else {
+            require(msg.value == amount, "Purchase amount must match value sent");
+        }
+        _tokensIn += finalAmount;
+        return finalAmount;
+    }
+
+    function _transferOut(address to, uint256 amount) internal {
+        _tokensOut += amount;
+        if (isERC20()) {
+            uint256 balance = _token.balanceOf(address(this));
+            require(balance >= amount, "Insufficient Balance");
+            _token.safeTransfer(to, amount);
+        } else {
+            (bool sent,) = payable(to).call{value: amount}("");
+            require(sent, "Failed to transfer Ether");
+        }
     }
 
     ////////////////////////
@@ -157,25 +173,11 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable {
     }
 
     function creatorBalance() public view returns (uint256) {
-        return creatorEarnings() - _withdrawn;
+        return _tokensIn - _tokensOut;
     }
 
     function creatorEarnings() public view returns (uint256) {
-        uint256 value = 0;
-        for (uint256 i = 1; i <= _tokenCounter; i++) {
-            address account = _ownerOf(i);
-            value += (_subscriptions[account].secondsPurchased - timeBalanceOf(account));
-        }
-        return value * _tokensPerSecond;
-    }
-
-    //////////////////////
-    // Overrides
-    //////////////////////
-
-    // balanceOf is the number of tokens at time of call
-    function balanceOf(address account) public view override returns (uint256) {
-        return timeBalanceOf(account) * _tokensPerSecond;
+        return _tokensIn;
     }
 
     // The number of seconds remaining on the subscription for an account
@@ -195,5 +197,38 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable {
     {
         Subscription memory sub = _subscriptions[account];
         return (sub.tokenId, sub.secondsPurchased, sub.timeOffset);
+    }
+
+    function isERC20() public view returns (bool) {
+        return address(_token) != address(0);
+    }
+
+    function erc20Address() public view returns (address) {
+        return address(_token);
+    }
+
+    //////////////////////
+    // Overrides
+    //////////////////////
+
+    // balanceOf is the number of tokens at time of call
+    function balanceOf(address account) public view override returns (uint256) {
+        return timeBalanceOf(account) * _tokensPerSecond;
+    }
+
+    /**
+     * @dev See {IERC721Metadata-tokenURI}.
+     */
+    function _baseURI() internal view override returns (string memory) {
+        return _baseUri;
+    }
+
+    //////////////////////
+    // Misc
+    //////////////////////
+
+    function _nextTokenId() internal returns (uint256) {
+        _tokenCounter += 1;
+        return _tokenCounter;
     }
 }
