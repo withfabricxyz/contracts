@@ -4,7 +4,7 @@ pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts/proxy/Clones.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./ManifestV1.sol";
+import "./SubscriptionNFTV1.sol";
 
 /**
  *
@@ -14,7 +14,7 @@ import "./ManifestV1.sol";
  * @dev A factory which leverages Clones to deploy Fabric Manifest Subscription NFT contracts
  *
  */
-contract ManifestV1Factory is Ownable {
+contract SubscriptionNFTV1Factory is Ownable {
     modifier feeRequired() {
         require(msg.value >= _feeDeployMin, "Insufficient ETH to deploy");
         _;
@@ -62,11 +62,10 @@ contract ManifestV1Factory is Ownable {
         address erc20TokenAddr
     ) external payable feeRequired returns (address) {
         address deployment = Clones.clone(_implementation);
-
-        ManifestV1(payable(deployment)).initialize(name, symbol, baseUri, msg.sender, tokensPerSecond, erc20TokenAddr);
-
+        SubscriptionNFTV1(payable(deployment)).initialize(
+            name, symbol, baseUri, msg.sender, tokensPerSecond, 0, _feeBips, _feeCollector, erc20TokenAddr
+        );
         emit Deployment(deployment);
-
         return deployment;
     }
 

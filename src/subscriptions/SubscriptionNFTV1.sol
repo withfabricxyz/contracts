@@ -9,15 +9,30 @@ import "@openzeppelin-upgradeable/contracts/security/PausableUpgradeable.sol";
 import "@openzeppelin-upgradeable/contracts/token/ERC721/ERC721Upgradeable.sol";
 import "@forge/console2.sol";
 
-contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpgradeable {
+// TODO: Transfer Behavior
+// TODO: Subscription detail (token id)
+
+contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpgradeable {
     using SafeERC20 for IERC20;
+
+    /// @dev Maximum fee basis points (12.5%)
+    uint16 private constant MAX_FEE_BIPS = 1250;
+
+    /// @dev Maximum basis points (100%)
+    uint16 private constant MAX_BIPS = 10000;
+
+    /// @dev guard to ensure the purchase amount is valid
+    modifier validAmount(uint256 amount) {
+        require(amount >= _minimumPurchase, "Amount must be >= minimum purchase");
+        _;
+    }
 
     /// @dev Emitted when the owner withdraws available funds
     event CreatorWithdraw(address indexed account, uint256 tokensTransferred);
 
     /// @dev Emitted when a subscriber purchases time
     event SubscriptionFunded(
-        address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timePurchased
+        address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timePurchased, uint64 expiresAt
     );
 
     /// @dev Emitted when the creator refunds a subscribers remaining time
@@ -25,32 +40,51 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpgradeabl
         address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timeReclaimed
     );
 
-    // The subscription struct which holds the state of a subscription for an account
+    /// @dev The subscription struct which holds the state of a subscription for an account
     struct Subscription {
         uint256 tokenId;
         uint256 secondsPurchased;
-        uint256 timeOffset;
+        uint256 timeOffset; // expiresAt?
     }
 
     string private _baseUri;
 
-    // The cost of one second in denominated token (wei or other base unit)
+    /// @dev The cost of one second in denominated token (wei or other base unit)
     uint256 private _tokensPerSecond;
+
+    /// @dev The minimum number of tokens accepted for a time purchase
+    uint256 private _minimumPurchase;
+
+    /// @dev The token contract address, or 0x0 for native tokens
     IERC20 private _token;
 
+    /// @dev The total number of tokens transferred in
     uint256 private _tokensIn;
+
+    /// @dev The total number of tokens transferred out
     uint256 private _tokensOut;
+
+    /// @dev The token counter for mint id generation
     uint256 private _tokenCounter;
 
+    /// @dev The total number of tokens allocated for the fee collector
+    uint256 private _feeBalance;
+
+    /// @dev The fee basis points (10000 = 100%, max = MAX_FEE_BIPS)
+    uint16 private _feeBps;
+
+    /// @dev The fee recipient address
+    address private _feeRecipient;
+
+    /// @dev The subscription state for each account
     mapping(address => Subscription) private _subscriptions;
 
     constructor() {
         _disableInitializers();
     }
 
-    // TODO: Native Token Guard
     receive() external payable {
-        _purchase(msg.sender, msg.value);
+        purchaseFor(msg.sender, msg.value);
     }
 
     function initialize(
@@ -59,13 +93,26 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpgradeabl
         string memory baseUri,
         address owner,
         uint256 tokensPerSecond,
+        uint256 minimumPurchase,
+        uint16 feeBps,
+        address feeRecipient,
         address erc20TokenAddr
     ) public initializer {
+        require(owner != address(0), "Owner address cannot be 0x0");
+        require(tokensPerSecond > 0, "Tokens per second must be > 0");
+        require(feeBps <= MAX_FEE_BIPS, "Fee bps too high");
+        if (feeRecipient != address(0)) {
+            require(feeBps > 0, "Fees required when fee recipient is present");
+        }
+
         __ERC721_init(name, symbol);
         _transferOwnership(owner);
         __Pausable_init_unchained();
         _baseUri = baseUri;
         _tokensPerSecond = tokensPerSecond;
+        _minimumPurchase = minimumPurchase;
+        _feeBps = feeBps;
+        _feeRecipient = feeRecipient;
         _token = IERC20(erc20TokenAddr);
     }
 
@@ -77,7 +124,7 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpgradeabl
         purchaseFor(msg.sender, amount);
     }
 
-    function purchaseFor(address account, uint256 amount) public payable whenNotPaused {
+    function purchaseFor(address account, uint256 amount) public payable whenNotPaused validAmount(amount) {
         uint256 finalAmount = _transferIn(account, amount);
         _purchase(account, finalAmount);
     }
@@ -99,7 +146,7 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpgradeabl
             sub.secondsPurchased += tv;
             _subscriptions[account] = sub;
         }
-        emit SubscriptionFunded(account, sub.tokenId, amount, tv);
+        emit SubscriptionFunded(account, sub.tokenId, amount, tv, uint64(sub.timeOffset + sub.secondsPurchased));
     }
 
     /////////////////////////
@@ -107,11 +154,15 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpgradeabl
     /////////////////////////
 
     // withdrawEarnings?
-    function withdraw() external payable onlyOwner {
+    function withdraw() external {
+        transferEarnings(msg.sender);
+    }
+
+    function transferEarnings(address account) public onlyOwner {
         uint256 balance = creatorBalance();
         require(balance > 0, "No Balance");
-        emit CreatorWithdraw(msg.sender, balance);
-        _transferOut(msg.sender, balance);
+        emit CreatorWithdraw(account, balance);
+        _transferOutAndAllocateFees(account, balance);
     }
 
     function refund(address account) external onlyOwner {
@@ -133,6 +184,30 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpgradeabl
         _unpause();
     }
 
+    /////////////////////////
+    // Fee Management
+    /////////////////////////
+
+    function feeBps() external view returns (uint16) {
+        return _feeBps;
+    }
+
+    function feeRecipient() external view returns (address) {
+        return _feeRecipient;
+    }
+
+    function feeBalance() external view returns (uint256) {
+        return _feeBalance;
+    }
+
+    function transferFees() external {
+        uint256 balance = _feeBalance;
+        require(balance > 0, "No fees to collect");
+        _feeBalance = 0;
+        // TODO: Emit
+        _transferOut(_feeRecipient, balance);
+    }
+
     ////////////////////////
     // Transfers
     ////////////////////////
@@ -152,6 +227,11 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpgradeabl
         return finalAmount;
     }
 
+    function _transferOutAndAllocateFees(address to, uint256 amount) internal {
+        uint256 finalAmount = _allocateFees(amount);
+        _transferOut(to, finalAmount);
+    }
+
     function _transferOut(address to, uint256 amount) internal {
         _tokensOut += amount;
         if (isERC20()) {
@@ -162,6 +242,12 @@ contract ManifestV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpgradeabl
             (bool sent,) = payable(to).call{value: amount}("");
             require(sent, "Failed to transfer Ether");
         }
+    }
+
+    function _allocateFees(uint256 amount) internal returns (uint256) {
+        uint256 fee = (amount * _feeBps) / MAX_BIPS;
+        _feeBalance += fee;
+        return amount - fee;
     }
 
     ////////////////////////
