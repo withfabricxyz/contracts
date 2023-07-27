@@ -203,13 +203,17 @@ abstract contract BaseCampaignTest is Test {
         vm.warp(campaign().endsAt());
     }
 
-    function fundAndTransferEarly() internal {
+    function fullyFund() internal {
         dealAll();
         deposit(alice, 1e18);
         deposit(bob, 1e18);
         deposit(charlie, 1e18);
         deposit(doug, 1e18);
         deposit(elliot, 1e18);
+    }
+
+    function fundAndTransferEarly() internal {
+        fullyFund();
         campaign().transferBalanceToRecipient();
     }
 

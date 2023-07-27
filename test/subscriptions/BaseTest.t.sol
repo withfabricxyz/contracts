@@ -8,7 +8,6 @@ import "@forge/Test.sol";
 import "@forge/console2.sol";
 
 abstract contract BaseTest is Test {
-    // error NoActiveSubscription(address account);
     event SubscriptionFunded(
         address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timePurchased, uint64 expiresAt
     );
@@ -16,6 +15,9 @@ abstract contract BaseTest is Test {
         address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timeReclaimed
     );
     event CreatorWithdraw(address indexed account, uint256 tokensTransferred);
+    event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
+    event FeeRecipientTransfer(address indexed from, address indexed to, uint256 tokensTransferred);
+    event FeeRecipientChange(address indexed from, address indexed to);
 
     modifier prank(address user) {
         vm.startPrank(user);
@@ -41,13 +43,19 @@ abstract contract BaseTest is Test {
 
     SubscriptionNFTV1 internal manifest;
 
-    function purchase(address account, uint256 amount) internal prank(account) {
-        if (manifest.isERC20()) {
+    function mint(address account, uint256 amount) internal prank(account) {
+        if (manifest.erc20Address() != address(0)) {
             token().approve(address(manifest), amount);
-            manifest.purchase(amount);
+            manifest.mint(amount);
         } else {
-            manifest.purchase{value: amount}(amount);
+            manifest.mint{value: amount}(amount);
         }
+    }
+
+    function list(address account) internal pure returns (address[] memory) {
+        address[] memory subscribers = new address[](1);
+        subscribers[0] = account;
+        return subscribers;
     }
 
     function withdraw() internal prank(creator) {
@@ -71,17 +79,17 @@ abstract contract BaseTest is Test {
 
         SubscriptionNFTV1 m = new SubscriptionNFTV1();
         vm.store(address(m), bytes32(uint256(0)), bytes32(0));
-        m.initialize("Meow Manifest", "MEOW", "https://art.meow.com/", creator, 2, 0, 0, address(0), address(_token));
+        m.initialize("Meow Manifest", "MEOW", "curi", "turi", creator, 2, 0, 0, address(0), address(_token));
         return m;
     }
 
     function createETHManifest(uint256 minPurchase, uint16 feeBps) public virtual returns (SubscriptionNFTV1) {
         SubscriptionNFTV1 m = new SubscriptionNFTV1();
         vm.store(address(m), bytes32(uint256(0)), bytes32(0));
-        if(feeBps > 0) {
-          m.initialize("Meow Manifest", "MEOW", "https://art.meow.com/", creator, 2, minPurchase, feeBps, fees, address(0));
+        if (feeBps > 0) {
+            m.initialize("Meow Manifest", "MEOW", "curi", "turi", creator, 2, minPurchase, feeBps, fees, address(0));
         } else {
-           m.initialize("Meow Manifest", "MEOW", "https://art.meow.com/", creator, 2, minPurchase, 0, address(0), address(0));
+            m.initialize("Meow Manifest", "MEOW", "curi", "turi", creator, 2, minPurchase, 0, address(0), address(0));
         }
         return m;
     }

@@ -7,7 +7,7 @@ import "src/subscriptions/SubscriptionNFTV1.sol";
 import "src/tokens/ERC20Token.sol";
 import "./BaseTest.t.sol";
 
-contract SubscriptionNFTV1Test is BaseTest {
+contract SubscriptionNFTV1FeeTest is BaseTest {
     function setUp() public {
         deal(alice, 1e19);
         deal(bob, 1e19);
@@ -17,9 +17,11 @@ contract SubscriptionNFTV1Test is BaseTest {
     }
 
     function testAllocation() public withFees {
-        assertEq(manifest.feeBps(), 500);
-        assertEq(manifest.feeRecipient(), fees);
-        purchase(alice, 1e18);
+        (address recipient, uint16 bps) = manifest.feeSchedule();
+
+        assertEq(bps, 500);
+        assertEq(recipient, fees);
+        mint(alice, 1e18);
 
         uint256 expectedFee = (1e18 * 500) / 10000;
         uint256 balance = creator.balance;
@@ -30,12 +32,14 @@ contract SubscriptionNFTV1Test is BaseTest {
     }
 
     function testFeeTransfer() public withFees {
-        purchase(alice, 1e18);
+        mint(alice, 1e18);
         withdraw();
 
         uint256 expectedFee = (1e18 * 500) / 10000;
         uint256 balance = fees.balance;
 
+        vm.expectEmit(true, true, false, true, address(manifest));
+        emit FeeRecipientTransfer(address(this), fees, expectedFee);
         manifest.transferFees();
         assertEq(fees.balance, balance + expectedFee);
         assertEq(manifest.feeBalance(), 0);
@@ -44,4 +48,13 @@ contract SubscriptionNFTV1Test is BaseTest {
         manifest.transferFees();
     }
 
+    function testFeeCollectorUpdate() public withFees {
+        vm.startPrank(fees);
+        vm.expectEmit(true, true, false, true, address(manifest));
+        emit FeeRecipientChange(fees, charlie);
+        manifest.updateFeeRecipient(charlie);
+        vm.expectRevert("Unauthorized");
+        manifest.updateFeeRecipient(charlie);
+        vm.stopPrank();
+    }
 }

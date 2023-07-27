@@ -21,18 +21,20 @@ contract TransferTests is BaseCampaignTest {
     }
 
     function testSuccess() public multiTokenTest {
+        fundAndEnd();
         vm.expectEmit(true, false, false, true, address(campaign()));
         emit TransferContributions(recipient, 1e18 * 3);
-        fundAndTransfer();
+        campaign().transferBalanceToRecipient();
         assertTrue(CrowdFinancingV1.State.FUNDED == campaign().state());
         assertTrue(campaign().isWithdrawAllowed());
         assertEq(3e18, balance(recipient));
     }
 
     function testEarlySuccess() public multiTokenTest {
+        fullyFund();
         vm.expectEmit(true, false, false, true, address(campaign()));
         emit TransferContributions(recipient, 1e18 * 5);
-        fundAndTransferEarly();
+        campaign().transferBalanceToRecipient();
         assertTrue(CrowdFinancingV1.State.FUNDED == campaign().state());
         assertTrue(campaign().isWithdrawAllowed());
     }
@@ -43,10 +45,10 @@ contract TransferTests is BaseCampaignTest {
     }
 
     function testUpfrontFees() public multiTokenFeeTest(100, 0) {
+        fundAndEnd();
         vm.expectEmit(true, true, false, false, address(campaign()));
         emit TransferContributions(feeCollector, 3e16);
-
-        fundAndTransfer();
+        campaign().transferBalanceToRecipient();
         assertEq(3e18 - 3e16, balance(recipient));
         assertEq(3e16, balance(feeCollector));
         assertEq(0, address(campaign()).balance);
