@@ -9,7 +9,7 @@ import "@forge/console2.sol";
 
 abstract contract BaseTest is Test {
     event SubscriptionFunded(
-        address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timePurchased, uint64 expiresAt
+        address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timePurchased, uint256 expiresAt
     );
     event SubscriptionRefund(
         address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timeReclaimed

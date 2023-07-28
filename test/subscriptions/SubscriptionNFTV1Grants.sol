@@ -14,7 +14,20 @@ contract SubscriptionNFTV1GrantsTest is BaseTest {
         deal(charlie, 1e19);
         deal(creator, 1e19);
         deal(fees, 1e19);
+        manifest = createETHManifest(0, 0);
     }
 
-    function testGrant() public prank(creator) {}
+    function testGrant() public {
+        vm.startPrank(creator);
+        manifest.grantTime(list(alice), 1e15);
+        vm.stopPrank();
+
+        assertEq(manifest.balanceOf(alice), 1e15);
+        assertEq(manifest.refundableBalanceOf(alice), 0);
+
+        mint(alice, 1e18);
+
+        assertEq(manifest.balanceOf(alice), 1e15 + 1e18);
+        // assertEq(manifest.refundableBalanceOf(alice), 1e18);
+    }
 }

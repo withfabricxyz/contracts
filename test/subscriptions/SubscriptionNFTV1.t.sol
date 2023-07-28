@@ -58,7 +58,7 @@ contract SubscriptionNFTV1Test is BaseTest {
 
     function testMintFor() public prank(alice) {
         vm.expectEmit(true, true, false, true, address(manifest));
-        emit SubscriptionFunded(bob, 1, 1e18, 1e18 / 2, uint64(block.timestamp + 1e18 / 2));
+        emit SubscriptionFunded(bob, 1, 1e18, 1e18 / 2, block.timestamp + (1e18 / 2));
         manifest.mintFor{value: 1e18}(bob, 1e18);
         assertEq(address(manifest).balance, 1e18);
         assertEq(manifest.balanceOf(bob), 5e17);
@@ -78,7 +78,7 @@ contract SubscriptionNFTV1Test is BaseTest {
         manifest.mint{value: 1e18}(1e18);
         vm.warp(block.timestamp + 25e16);
         assertEq(manifest.balanceOf(alice), 5e17 / 2);
-        assertEq(manifest.refundableBalanceOf(alice), 5e17);
+        assertEq(manifest.refundableBalanceOf(alice), 5e17 / 2);
     }
 
     function testMintExpire() public prank(alice) {
@@ -141,7 +141,7 @@ contract SubscriptionNFTV1Test is BaseTest {
     function testPartialRefund() public {
         mint(alice, 1e18);
         vm.warp(block.timestamp + 2.5e17);
-        assertEq(5e17, manifest.refundableBalanceOf(alice));
+        assertEq(5e17 / 2, manifest.refundableBalanceOf(alice));
         vm.startPrank(creator);
         vm.expectEmit(true, true, false, true, address(manifest));
         emit SubscriptionRefund(alice, 1, 5e17, 5e17 / 2);

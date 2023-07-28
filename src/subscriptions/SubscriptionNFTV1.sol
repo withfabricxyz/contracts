@@ -31,7 +31,7 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
 
     /// @dev Emitted when a subscriber purchases time
     event SubscriptionFunded(
-        address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timePurchased, uint64 expiresAt
+        address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timePurchased, uint256 expiresAt
     );
 
     /// @dev Emitted when the creator refunds a subscribers remaining time
@@ -49,7 +49,9 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
     struct Subscription {
         uint256 tokenId;
         uint256 secondsPurchased;
+        // purchaseOffset
         uint256 secondsGranted;
+        // grantOffset
         uint256 timeOffset;
     }
 
@@ -142,28 +144,39 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
 
     function mintFor(address account, uint256 numTokens) public payable whenNotPaused validAmount(numTokens) {
         uint256 finalAmount = _transferIn(account, numTokens);
-        _mintTime(account, finalAmount);
+        _purchaseTime(account, finalAmount);
     }
 
-    function _mintTime(address account, uint256 amount) internal {
-        Subscription memory sub = _subscriptions[account];
+    function _purchaseTime(address account, uint256 amount) internal {
+        Subscription memory sub = _fetchSubscription(account);
+        if (block.timestamp > subscriptionExpiresAt(sub)) {
+            // Wrap?
+            // if (sub.secondsPurchased > block.timestamp) {
+            //     revert("No");
+            // }
+            sub.timeOffset = block.timestamp - sub.secondsPurchased - sub.secondsGranted;
+        }
 
         uint256 tv = timeValue(amount);
-        uint256 time = block.timestamp;
+        sub.secondsPurchased += tv;
+        _subscriptions[account] = sub;
+        emit SubscriptionFunded(account, sub.tokenId, amount, tv, subscriptionExpiresAt(sub));
+    }
 
+    // Account for grant time + purchase time
+    function _fundSubscription(Subscription memory sub, uint256 secondsPurchases, uint256 secondsGranted) internal {
+        // uint256 tv = timeValue(numTokens);
+        sub.secondsPurchased += tv;
+    }
+
+    function _fetchSubscription(address account) internal returns (Subscription memory) {
+        Subscription memory sub = _subscriptions[account];
         if (sub.tokenId == 0) {
             _tokenCounter += 1;
-            sub = Subscription(_tokenCounter, tv, 0, time);
+            sub = Subscription(_tokenCounter, 0, 0, block.timestamp);
             _safeMint(account, sub.tokenId);
-            _subscriptions[account] = sub;
-        } else {
-            if (time > sub.timeOffset + sub.secondsPurchased) {
-                sub.timeOffset = time - sub.secondsPurchased;
-            }
-            sub.secondsPurchased += tv;
-            _subscriptions[account] = sub;
         }
-        emit SubscriptionFunded(account, sub.tokenId, amount, tv, uint64(sub.timeOffset + sub.secondsPurchased));
+        return sub;
     }
 
     // cancelSubscription
@@ -198,9 +211,9 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
             return;
         }
 
-        // TODO: Purchase time balance (omit grants)
-        uint256 balance = balanceOf(account);
+        uint256 balance = refundableBalanceOf(account);
         sub.secondsPurchased -= balance;
+        sub.secondsGranted = 0;
         _subscriptions[account] = sub;
         uint256 tokens = balance * _tokensPerSecond;
         emit SubscriptionRefund(account, sub.tokenId, tokens, balance);
@@ -213,8 +226,18 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
     }
 
     // TODO: Account for mismatch between tokens in and time
-    // function grantTime(address[] memory accounts, uint256 secondsToAdd) external onlyOwner {
-    // }
+    function grantTime(address[] memory accounts, uint256 secondsToAdd) external onlyOwner {
+        for (uint256 i = 0; i < accounts.length; i++) {
+            _grantTime(accounts[i], secondsToAdd);
+        }
+    }
+
+    function _grantTime(address account, uint256 secondsToAdd) internal {
+        Subscription memory sub = _fetchSubscription(account);
+        sub.secondsGranted += secondsToAdd;
+        _subscriptions[account] = sub;
+        // TODO: Emit
+    }
 
     function pause() external onlyOwner {
         _pause();
@@ -311,18 +334,27 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
     function subscriptionOf(address account)
         public
         view
-        returns (uint256 tokenId, uint256 refundableAmount, uint64 expiresAt)
+        returns (uint256 tokenId, uint256 refundableAmount, uint256 expiresAt)
     {
         Subscription memory sub = _subscriptions[account];
-        return (sub.tokenId, sub.secondsPurchased, uint64(sub.timeOffset + sub.secondsPurchased));
+        return (sub.tokenId, sub.secondsPurchased, subscriptionExpiresAt(sub));
+    }
+
+    function subscriptionExpiresAt(Subscription memory sub) public pure returns (uint256 numSeconds) {
+        return sub.timeOffset + sub.secondsPurchased + sub.secondsGranted;
     }
 
     function erc20Address() public view returns (address) {
         return address(_token);
     }
 
-    function refundableBalanceOf(address account) public view returns (uint256 balance) {
-        return balanceOf(account) * _tokensPerSecond;
+    function refundableBalanceOf(address account) public view returns (uint256 numSeconds) {
+        Subscription memory sub = _subscriptions[account];
+        uint256 expiresAt = sub.timeOffset + sub.secondsPurchased;
+        if (expiresAt <= block.timestamp) {
+            return 0;
+        }
+        return expiresAt - block.timestamp;
     }
 
     function contractURI() public view returns (string memory) {
@@ -351,7 +383,7 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
 
     function balanceOf(address account) public view override returns (uint256 numSeconds) {
         Subscription memory sub = _subscriptions[account];
-        uint256 expiresAt = sub.timeOffset + sub.secondsPurchased;
+        uint256 expiresAt = subscriptionExpiresAt(sub);
         if (expiresAt <= block.timestamp) {
             return 0;
         }
