@@ -8,7 +8,6 @@ import "@openzeppelin-upgradeable/contracts/utils/StringsUpgradeable.sol";
 import "@openzeppelin-upgradeable/contracts/access/OwnableUpgradeable.sol";
 import "@openzeppelin-upgradeable/contracts/security/PausableUpgradeable.sol";
 import "@openzeppelin-upgradeable/contracts/token/ERC721/ERC721Upgradeable.sol";
-import "@forge/console2.sol";
 
 contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpgradeable {
     using SafeERC20 for IERC20;
@@ -34,7 +33,7 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timePurchased, uint256 expiresAt
     );
 
-    event SubscriptionGranted(address indexed account, uint256 tokenId, uint256 secondsGranted, uint256 expiresAt);
+    event SubscriptionGrant(address indexed account, uint256 tokenId, uint256 secondsGranted, uint256 expiresAt);
 
     /// @dev Emitted when the creator refunds a subscribers remaining time
     event SubscriptionRefund(
@@ -86,14 +85,16 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
     /// @dev The fee basis points (10000 = 100%, max = _MAX_FEE_BIPS)
     uint16 private _feeBps;
 
-    /// @dev The fee recipient address
-    address private _feeRecipient;
+    /// @dev The fee collector address
+    address private _feeCollector;
 
     /// @dev Flag which determines if the contract is erc20 denominated
     bool private _erc20;
 
     /// @dev The subscription state for each account
     mapping(address => Subscription) private _subscriptions;
+
+    ////////////////////////////////////
 
     constructor() {
         _disableInitializers();
@@ -110,13 +111,14 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         string memory tokenUri,
         address owner,
         uint256 tokensPerSecond,
-        uint256 minimumPurchase,
+        uint256 minimumPurchaseSeconds,
         uint16 feeBps,
         address feeRecipient,
         address erc20TokenAddr
     ) public initializer {
         require(owner != address(0), "Owner address cannot be 0x0");
         require(tokensPerSecond > 0, "Tokens per second must be > 0");
+        require(minimumPurchaseSeconds > 0, "Min purchase seconds must be > 0");
         require(feeBps <= _MAX_FEE_BIPS, "Fee bps too high");
         if (feeRecipient != address(0)) {
             require(feeBps > 0, "Fees required when fee recipient is present");
@@ -128,9 +130,9 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         _contractURI = contractUri;
         _tokenURI = tokenUri;
         _tokensPerSecond = tokensPerSecond;
-        _minimumPurchase = minimumPurchase;
+        _minimumPurchase = minimumPurchaseSeconds * tokensPerSecond;
         _feeBps = feeBps;
-        _feeRecipient = feeRecipient;
+        _feeCollector = feeRecipient;
         _token = IERC20(erc20TokenAddr);
         _erc20 = erc20TokenAddr != address(0);
     }
@@ -143,8 +145,9 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         mintFor(msg.sender, numTokens);
     }
 
+    // TODO: test for erc20 (failing)
     function mintFor(address account, uint256 numTokens) public payable whenNotPaused validAmount(numTokens) {
-        uint256 finalAmount = _transferIn(account, numTokens);
+        uint256 finalAmount = _transferIn(msg.sender, numTokens);
         _purchaseTime(account, finalAmount);
     }
 
@@ -160,7 +163,7 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         uint256 tv = timeValue(amount);
         sub.secondsPurchased += tv;
         _subscriptions[account] = sub;
-        emit SubscriptionFunded(account, sub.tokenId, amount, tv, subscriptionExpiresAt(sub));
+        emit SubscriptionFunded(account, sub.tokenId, amount, tv, _subscriptionExpiresAt(sub));
     }
 
     function _fetchSubscription(address account) internal returns (Subscription memory) {
@@ -173,10 +176,6 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         return sub;
     }
 
-    // cancelSubscription
-    // stopAutoRenew
-    // startAutoRenew
-
     /////////////////////////
     // Creator Calls
     /////////////////////////
@@ -188,30 +187,43 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
     function withdrawTo(address account) public onlyOwner {
         uint256 balance = creatorBalance();
         require(balance > 0, "No Balance");
-        emit CreatorWithdraw(account, balance);
-        _transferOutAndAllocateFees(account, balance);
+        _transferToCreator(account, balance);
     }
+
+    /// TODO: withdrawAndTransferFees
 
     // Refund all accounts
     function refund(address[] memory accounts) external onlyOwner {
+        require(canRefund(accounts), "Insufficient balance for refund");
         for (uint256 i = 0; i < accounts.length; i++) {
             _refund(accounts[i]);
         }
     }
 
+    function canRefund(address[] memory accounts) public view returns (bool) {
+        uint256 amount;
+        for (uint256 i = 0; i < accounts.length; i++) {
+            amount += refundableBalanceOf(accounts[i]);
+        }
+        return amount <= creatorBalance();
+    }
+
     function _refund(address account) internal {
         Subscription memory sub = _subscriptions[account];
-        if (sub.secondsPurchased == 0) {
+        if (sub.secondsPurchased == 0 && sub.secondsGranted == 0) {
             return;
         }
 
-        uint256 balance = refundableBalanceOf(account);
-        sub.secondsPurchased -= balance;
+        // Clear grants
         sub.secondsGranted = 0;
-        _subscriptions[account] = sub;
+        uint256 balance = refundableBalanceOf(account);
         uint256 tokens = balance * _tokensPerSecond;
+        if (balance > 0) {
+            sub.secondsPurchased -= balance;
+            _transferOut(account, tokens);
+        }
+        _subscriptions[account] = sub;
         emit SubscriptionRefund(account, sub.tokenId, tokens, balance);
-        _transferOut(account, tokens);
     }
 
     function updateMetadata(string memory contractUri, string memory tokenUri) external onlyOwner {
@@ -219,7 +231,6 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         _tokenURI = tokenUri;
     }
 
-    // TODO: Account for mismatch between tokens in and time
     function grantTime(address[] memory accounts, uint256 secondsToAdd) external onlyOwner {
         for (uint256 i = 0; i < accounts.length; i++) {
             _grantTime(accounts[i], secondsToAdd);
@@ -237,7 +248,7 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         sub.secondsGranted += secondsGranted;
         _subscriptions[account] = sub;
 
-        emit SubscriptionGranted(account, sub.tokenId, secondsGranted, subscriptionExpiresAt(sub));
+        emit SubscriptionGrant(account, sub.tokenId, secondsGranted, _subscriptionExpiresAt(sub));
     }
 
     function _grantTimeRemaining(Subscription memory sub) internal view returns (uint256) {
@@ -269,7 +280,7 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
     /////////////////////////
 
     function feeSchedule() external view returns (address feeRecipient, uint16 feeBps) {
-        return (_feeRecipient, _feeBps);
+        return (_feeCollector, _feeBps);
     }
 
     function feeBalance() external view returns (uint256 balance) {
@@ -278,16 +289,18 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
 
     function transferFees() external {
         require(_feeBalance > 0, "No fees to collect");
-        uint256 balance = _feeBalance;
-        _feeBalance = 0;
-        _transferOut(_feeRecipient, balance);
-        emit FeeRecipientTransfer(msg.sender, _feeRecipient, balance);
+        _transferFees();
     }
 
-    function updateFeeRecipient(address newRecipient) external {
-        require(msg.sender == _feeRecipient, "Unauthorized");
-        _feeRecipient = newRecipient;
-        emit FeeRecipientChange(msg.sender, newRecipient);
+    function updateFeeRecipient(address newCollector) external {
+        require(msg.sender == _feeCollector, "Unauthorized");
+        // Give tokens back to creator and set fee rate to 0
+        if (newCollector == address(0)) {
+            _feeBalance = 0;
+            _feeBps = 0;
+        }
+        _feeCollector = newCollector;
+        emit FeeRecipientChange(msg.sender, newCollector);
     }
 
     ////////////////////////
@@ -309,21 +322,27 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         return finalAmount;
     }
 
-    function _transferOutAndAllocateFees(address to, uint256 amount) internal {
+    function _transferToCreator(address to, uint256 amount) internal {
         uint256 finalAmount = _allocateFees(amount);
+        emit CreatorWithdraw(to, finalAmount);
         _transferOut(to, finalAmount);
     }
 
     function _transferOut(address to, uint256 amount) internal {
         _tokensOut += amount;
         if (_erc20) {
-            uint256 balance = _token.balanceOf(address(this));
-            require(balance >= amount, "Insufficient Balance");
             _token.safeTransfer(to, amount);
         } else {
             (bool sent,) = payable(to).call{value: amount}("");
             require(sent, "Failed to transfer Ether");
         }
+    }
+
+    function _transferFees() internal {
+        uint256 balance = _feeBalance;
+        _feeBalance = 0;
+        _transferOut(_feeCollector, balance);
+        emit FeeRecipientTransfer(msg.sender, _feeCollector, balance);
     }
 
     function _allocateFees(uint256 amount) internal returns (uint256) {
@@ -341,7 +360,7 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
     }
 
     function creatorBalance() public view returns (uint256 balance) {
-        return _tokensIn - _tokensOut;
+        return _tokensIn - _tokensOut - _feeBalance;
     }
 
     function totalCreatorEarnings() public view returns (uint256 total) {
@@ -354,10 +373,10 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         returns (uint256 tokenId, uint256 refundableAmount, uint256 expiresAt)
     {
         Subscription memory sub = _subscriptions[account];
-        return (sub.tokenId, sub.secondsPurchased, subscriptionExpiresAt(sub));
+        return (sub.tokenId, sub.secondsPurchased, _subscriptionExpiresAt(sub));
     }
 
-    function subscriptionExpiresAt(Subscription memory sub) public view returns (uint256 numSeconds) {
+    function _subscriptionExpiresAt(Subscription memory sub) internal view returns (uint256 numSeconds) {
         return block.timestamp + _purchaseTimeRemaining(sub) + _grantTimeRemaining(sub);
     }
 
@@ -374,6 +393,22 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         return _contractURI;
     }
 
+    function baseTokenURI() public view returns (string memory) {
+        return _tokenURI;
+    }
+
+    function tps() external view returns (uint256) {
+        return _tokensPerSecond;
+    }
+
+    function minPurchaseSeconds() external view returns (uint256) {
+        return _minimumPurchase / _tokensPerSecond;
+    }
+
+    /**
+     * @dev Returns the URI for a given token ID's metadata
+     *         if _tokenURI ends with a /, then we append the tokenId
+     */
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         _requireMinted(tokenId);
 
@@ -397,6 +432,24 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
     function balanceOf(address account) public view override returns (uint256 numSeconds) {
         Subscription memory sub = _subscriptions[account];
         return _purchaseTimeRemaining(sub) + _grantTimeRemaining(sub);
+    }
+
+    // TODO: test
+    function renounceOwnership() public override onlyOwner {
+        uint256 balance = creatorBalance();
+        if (balance > 0) {
+            _transferToCreator(msg.sender, balance);
+        }
+
+        // Transfer out all remaining funds
+        if (_feeBalance > 0) {
+            _transferFees();
+        }
+
+        // Pause the contract
+        _pause();
+
+        _transferOwnership(address(0));
     }
 
     /**

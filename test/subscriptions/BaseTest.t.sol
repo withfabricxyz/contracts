@@ -14,6 +14,8 @@ abstract contract BaseTest is Test {
     event SubscriptionRefund(
         address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timeReclaimed
     );
+    event SubscriptionGrant(address indexed account, uint256 tokenId, uint256 secondsGranted, uint256 expiresAt);
+
     event CreatorWithdraw(address indexed account, uint256 tokensTransferred);
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
     event FeeRecipientTransfer(address indexed from, address indexed to, uint256 tokensTransferred);
@@ -26,12 +28,12 @@ abstract contract BaseTest is Test {
     }
 
     modifier withFees() {
-        manifest = createETHManifest(0, 500);
+        stp = createETHManifest(1, 500);
         _;
     }
 
     modifier erc20() {
-        manifest = createERC20Manifest();
+        stp = createERC20Manifest();
         _;
     }
 
@@ -41,14 +43,14 @@ abstract contract BaseTest is Test {
     address internal bob = 0xB4C79DAB8f259C7aEE6E5B2aa729821864227E8a;
     address internal charlie = 0xb4C79Dab8F259C7AEe6e5b2Aa729821864227e7A;
 
-    SubscriptionNFTV1 internal manifest;
+    SubscriptionNFTV1 internal stp;
 
     function mint(address account, uint256 amount) internal prank(account) {
-        if (manifest.erc20Address() != address(0)) {
-            token().approve(address(manifest), amount);
-            manifest.mint(amount);
+        if (stp.erc20Address() != address(0)) {
+            token().approve(address(stp), amount);
+            stp.mint(amount);
         } else {
-            manifest.mint{value: amount}(amount);
+            stp.mint{value: amount}(amount);
         }
     }
 
@@ -59,11 +61,11 @@ abstract contract BaseTest is Test {
     }
 
     function withdraw() internal prank(creator) {
-        manifest.withdraw();
+        stp.withdraw();
     }
 
     function token() internal view returns (ERC20Token) {
-        return ERC20Token(manifest.erc20Address());
+        return ERC20Token(stp.erc20Address());
     }
 
     function createERC20Manifest() public virtual returns (SubscriptionNFTV1) {
@@ -79,7 +81,7 @@ abstract contract BaseTest is Test {
 
         SubscriptionNFTV1 m = new SubscriptionNFTV1();
         vm.store(address(m), bytes32(uint256(0)), bytes32(0));
-        m.initialize("Meow Manifest", "MEOW", "curi", "turi", creator, 2, 0, 0, address(0), address(_token));
+        m.initialize("Meow Manifest", "MEOW", "curi", "turi", creator, 2, 2, 0, address(0), address(_token));
         return m;
     }
 

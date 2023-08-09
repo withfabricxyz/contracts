@@ -60,11 +60,21 @@ contract SubscriptionNFTV1Factory is Ownable {
         string memory contractURI,
         string memory tokenURI,
         uint256 tokensPerSecond,
+        uint256 minimumPurchaseSeconds,
         address erc20TokenAddr
     ) external payable feeRequired returns (address) {
         address deployment = Clones.clone(_implementation);
         SubscriptionNFTV1(payable(deployment)).initialize(
-            name, symbol, contractURI, tokenURI, msg.sender, tokensPerSecond, 0, _feeBips, _feeCollector, erc20TokenAddr
+            name,
+            symbol,
+            contractURI,
+            tokenURI,
+            msg.sender,
+            tokensPerSecond,
+            minimumPurchaseSeconds,
+            _feeBips,
+            _feeCollector,
+            erc20TokenAddr
         );
         emit Deployment(deployment);
         return deployment;

@@ -17,7 +17,7 @@ contract SubscriptionNFTV1FeeTest is BaseTest {
     }
 
     function testAllocation() public withFees {
-        (address recipient, uint16 bps) = manifest.feeSchedule();
+        (address recipient, uint16 bps) = stp.feeSchedule();
 
         assertEq(bps, 500);
         assertEq(recipient, fees);
@@ -28,7 +28,7 @@ contract SubscriptionNFTV1FeeTest is BaseTest {
         withdraw();
 
         assertEq(creator.balance, balance + (1e18 - expectedFee));
-        assertEq(manifest.feeBalance(), expectedFee);
+        assertEq(stp.feeBalance(), expectedFee);
     }
 
     function testFeeTransfer() public withFees {
@@ -38,23 +38,58 @@ contract SubscriptionNFTV1FeeTest is BaseTest {
         uint256 expectedFee = (1e18 * 500) / 10000;
         uint256 balance = fees.balance;
 
-        vm.expectEmit(true, true, false, true, address(manifest));
+        vm.expectEmit(true, true, false, true, address(stp));
         emit FeeRecipientTransfer(address(this), fees, expectedFee);
-        manifest.transferFees();
+        stp.transferFees();
         assertEq(fees.balance, balance + expectedFee);
-        assertEq(manifest.feeBalance(), 0);
+        assertEq(stp.feeBalance(), 0);
 
         vm.expectRevert("No fees to collect");
-        manifest.transferFees();
+        stp.transferFees();
     }
 
     function testFeeCollectorUpdate() public withFees {
         vm.startPrank(fees);
-        vm.expectEmit(true, true, false, true, address(manifest));
+        vm.expectEmit(true, true, false, true, address(stp));
         emit FeeRecipientChange(fees, charlie);
-        manifest.updateFeeRecipient(charlie);
+        stp.updateFeeRecipient(charlie);
         vm.expectRevert("Unauthorized");
-        manifest.updateFeeRecipient(charlie);
+        stp.updateFeeRecipient(charlie);
         vm.stopPrank();
+    }
+
+    function testFeeCollectorRelinquish() public withFees {
+        mint(alice, 5e18);
+        withdraw();
+
+        assertEq(stp.creatorBalance(), 0);
+
+        uint256 expectedFee = (5e18 * 500) / 10000;
+        assertEq(stp.feeBalance(), expectedFee);
+
+        vm.startPrank(fees);
+        stp.updateFeeRecipient(address(0));
+        vm.stopPrank();
+
+        (address recipient, uint16 bps) = stp.feeSchedule();
+        assertEq(recipient, address(0));
+        assertEq(bps, 0);
+
+        assertEq(stp.feeBalance(), 0);
+        assertEq(stp.creatorBalance(), expectedFee);
+    }
+
+    function testRenounce() public withFees {
+        mint(alice, 1e18);
+        withdraw();
+        mint(alice, 1e17);
+
+        uint256 balance = fees.balance;
+        vm.startPrank(creator);
+        stp.renounceOwnership();
+        vm.stopPrank();
+
+        assertGt(fees.balance, balance);
+        assertEq(stp.feeBalance(), 0);
     }
 }
