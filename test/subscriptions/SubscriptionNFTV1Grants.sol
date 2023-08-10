@@ -20,7 +20,7 @@ contract SubscriptionNFTV1GrantsTest is BaseTest {
     function testGrant() public {
         vm.startPrank(creator);
         vm.expectEmit(true, true, false, true, address(stp));
-        emit SubscriptionGrant(alice, 1, 1e15, block.timestamp + 1e15);
+        emit Grant(alice, 1, 1e15, block.timestamp + 1e15);
         stp.grantTime(list(alice), 1e15);
         vm.stopPrank();
         assertEq(stp.balanceOf(alice), 1e15);

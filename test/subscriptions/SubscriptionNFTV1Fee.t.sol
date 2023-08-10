@@ -39,7 +39,7 @@ contract SubscriptionNFTV1FeeTest is BaseTest {
         uint256 balance = fees.balance;
 
         vm.expectEmit(true, true, false, true, address(stp));
-        emit FeeRecipientTransfer(address(this), fees, expectedFee);
+        emit FeeTransfer(address(this), fees, expectedFee);
         stp.transferFees();
         assertEq(fees.balance, balance + expectedFee);
         assertEq(stp.feeBalance(), 0);
@@ -51,7 +51,7 @@ contract SubscriptionNFTV1FeeTest is BaseTest {
     function testFeeCollectorUpdate() public withFees {
         vm.startPrank(fees);
         vm.expectEmit(true, true, false, true, address(stp));
-        emit FeeRecipientChange(fees, charlie);
+        emit FeeCollectorChange(fees, charlie);
         stp.updateFeeRecipient(charlie);
         vm.expectRevert("Unauthorized");
         stp.updateFeeRecipient(charlie);

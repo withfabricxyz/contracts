@@ -8,18 +8,16 @@ import "@forge/Test.sol";
 import "@forge/console2.sol";
 
 abstract contract BaseTest is Test {
-    event SubscriptionFunded(
+    event Purchase(
         address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timePurchased, uint256 expiresAt
     );
-    event SubscriptionRefund(
-        address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timeReclaimed
-    );
-    event SubscriptionGrant(address indexed account, uint256 tokenId, uint256 secondsGranted, uint256 expiresAt);
+    event Refund(address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timeReclaimed);
+    event Grant(address indexed account, uint256 tokenId, uint256 secondsGranted, uint256 expiresAt);
 
-    event CreatorWithdraw(address indexed account, uint256 tokensTransferred);
+    event Withdraw(address indexed account, uint256 tokensTransferred);
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
-    event FeeRecipientTransfer(address indexed from, address indexed to, uint256 tokensTransferred);
-    event FeeRecipientChange(address indexed from, address indexed to);
+    event FeeTransfer(address indexed from, address indexed to, uint256 tokensTransferred);
+    event FeeCollectorChange(address indexed from, address indexed to);
 
     modifier prank(address user) {
         vm.startPrank(user);

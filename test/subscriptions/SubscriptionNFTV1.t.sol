@@ -48,7 +48,7 @@ contract SubscriptionNFTV1Test is BaseTest {
 
     function testMint() public prank(alice) {
         vm.expectEmit(true, true, false, true, address(stp));
-        emit SubscriptionFunded(alice, 1, 1e18, 1e18 / 2, uint64(block.timestamp + 1e18 / 2));
+        emit Purchase(alice, 1, 1e18, 1e18 / 2, uint64(block.timestamp + 1e18 / 2));
         stp.mint{value: 1e18}(1e18);
         assertEq(address(stp).balance, 1e18);
         assertEq(stp.balanceOf(alice), 5e17);
@@ -64,7 +64,7 @@ contract SubscriptionNFTV1Test is BaseTest {
 
     function testMintFor() public prank(alice) {
         vm.expectEmit(true, true, false, true, address(stp));
-        emit SubscriptionFunded(bob, 1, 1e18, 1e18 / 2, block.timestamp + (1e18 / 2));
+        emit Purchase(bob, 1, 1e18, 1e18 / 2, block.timestamp + (1e18 / 2));
         stp.mintFor{value: 1e18}(bob, 1e18);
         assertEq(address(stp).balance, 1e18);
         assertEq(stp.balanceOf(bob), 5e17);
@@ -77,7 +77,7 @@ contract SubscriptionNFTV1Test is BaseTest {
         token().approve(address(stp), 1e18);
 
         vm.expectEmit(true, true, false, true, address(stp));
-        emit SubscriptionFunded(bob, 1, 1e18, 1e18 / 2, block.timestamp + (1e18 / 2));
+        emit Purchase(bob, 1, 1e18, 1e18 / 2, block.timestamp + (1e18 / 2));
         stp.mintFor(bob, 1e18);
         assertEq(token().balanceOf(address(stp)), 1e18);
         assertEq(stp.balanceOf(bob), 5e17);
@@ -124,14 +124,14 @@ contract SubscriptionNFTV1Test is BaseTest {
         assertEq(stp.creatorBalance(), 3e18);
     }
 
-    function testCreatorWithdraw() public {
+    function testWithdraw() public {
         mint(alice, 1e18);
         mint(bob, 1e18);
         vm.startPrank(creator);
         assertEq(stp.creatorBalance(), 2e18);
 
         vm.expectEmit(true, true, false, true, address(stp));
-        emit CreatorWithdraw(creator, 2e18);
+        emit Withdraw(creator, 2e18);
         stp.withdraw();
         assertEq(stp.creatorBalance(), 0);
         assertEq(stp.totalCreatorEarnings(), 2e18);
@@ -148,7 +148,7 @@ contract SubscriptionNFTV1Test is BaseTest {
         (uint256 tokenId,,) = stp.subscriptionOf(alice);
         vm.startPrank(creator);
         vm.expectEmit(true, true, false, true, address(stp));
-        emit SubscriptionRefund(alice, tokenId, 1e18, 1e18 / 2);
+        emit Refund(alice, tokenId, 1e18, 1e18 / 2);
         (creator, 2e18);
         stp.refund(list(alice));
         assertEq(address(stp).balance, 0);
@@ -163,7 +163,7 @@ contract SubscriptionNFTV1Test is BaseTest {
         assertEq(5e17 / 2, stp.refundableBalanceOf(alice));
         vm.startPrank(creator);
         vm.expectEmit(true, true, false, true, address(stp));
-        emit SubscriptionRefund(alice, 1, 5e17, 5e17 / 2);
+        emit Refund(alice, 1, 5e17, 5e17 / 2);
         stp.refund(list(alice));
         vm.stopPrank();
     }
@@ -223,7 +223,7 @@ contract SubscriptionNFTV1Test is BaseTest {
         assertEq(token().balanceOf(alice), 1e20);
         token().approve(address(stp), 1e18);
         vm.expectEmit(true, true, false, true, address(stp));
-        emit SubscriptionFunded(alice, 1, 1e18, 1e18 / 2, uint64(block.timestamp + 1e18 / 2));
+        emit Purchase(alice, 1, 1e18, 1e18 / 2, uint64(block.timestamp + 1e18 / 2));
         stp.mint(1e18);
         assertEq(token().balanceOf(address(stp)), 1e18);
         assertEq(stp.balanceOf(alice), 5e17);
@@ -246,7 +246,7 @@ contract SubscriptionNFTV1Test is BaseTest {
         vm.startPrank(creator);
         assertEq(stp.creatorBalance(), 2e18);
         vm.expectEmit(true, true, false, true, address(stp));
-        emit CreatorWithdraw(creator, 2e18);
+        emit Withdraw(creator, 2e18);
         stp.withdraw();
         assertEq(stp.creatorBalance(), 0);
         assertEq(stp.totalCreatorEarnings(), 2e18);
