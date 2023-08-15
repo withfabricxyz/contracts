@@ -590,9 +590,12 @@ contract SubscriptionTokenV1 is ERC721Upgradeable, OwnableUpgradeable, PausableU
         if (delta == 0) {
             rewardBps = code.rewardBpsMin;
         } else {
-            // Psuedo random value between min and max (variable reward)
+            // Psuedo random value between min and max (variable reward). This is weak, but acceptable given the nature
+            // of these rewards. The amount of tokens transferred will never be less than the minimum reward. If a miner
+            // is the referrer, then rewards could be biased towards the max reward. Creators should opt to use a fixed
+            // reward if they are concerned about this.
             rewardBps = code.rewardBpsMin
-                + uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender, tokenAmount, _tokensOut))) % delta;
+                + uint256(keccak256(abi.encode(block.difficulty, msg.sender, tokenAmount, _tokensOut))) % delta;
         }
 
         return (tokenAmount * rewardBps) / _MAX_BIPS;
@@ -646,7 +649,7 @@ contract SubscriptionTokenV1 is ERC721Upgradeable, OwnableUpgradeable, PausableU
         Subscription memory sub = _subscriptions[account];
 
         uint256 expires = _subscriptionExpiresAt(sub);
-        if (expires == block.timestamp) {
+        if (expires <= block.timestamp) {
             expires = 0;
         }
 
