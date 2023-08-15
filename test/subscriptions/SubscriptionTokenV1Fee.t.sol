@@ -3,11 +3,11 @@ pragma solidity ^0.8.17;
 
 import "@forge/Test.sol";
 import "@forge/console2.sol";
-import "src/subscriptions/SubscriptionNFTV1.sol";
+import "src/subscriptions/SubscriptionTokenV1.sol";
 import "src/tokens/ERC20Token.sol";
 import "./BaseTest.t.sol";
 
-contract SubscriptionNFTV1FeeTest is BaseTest {
+contract SubscriptionTokenV1FeeTest is BaseTest {
     function setUp() public {
         deal(alice, 1e19);
         deal(bob, 1e19);
@@ -46,6 +46,24 @@ contract SubscriptionNFTV1FeeTest is BaseTest {
 
         vm.expectRevert("No fees to collect");
         stp.transferFees();
+    }
+
+    function testWithdrawWithFees() public withFees {
+        mint(alice, 1e18);
+        mint(bob, 1e18);
+
+        uint256 balance = creator.balance;
+        uint256 feeBalance = fees.balance;
+        uint256 expectedFee = (2e18 * 500) / 10000;
+
+        vm.expectRevert("Ownable: caller is not the owner");
+        stp.withdrawAndTransferFees();
+
+        vm.startPrank(creator);
+        stp.withdrawAndTransferFees();
+        assertEq(creator.balance, balance + 2e18 - expectedFee);
+        assertEq(fees.balance, feeBalance + expectedFee);
+        vm.stopPrank();
     }
 
     function testFeeCollectorUpdate() public withFees {
@@ -91,5 +109,17 @@ contract SubscriptionNFTV1FeeTest is BaseTest {
 
         assertGt(fees.balance, balance);
         assertEq(stp.feeBalance(), 0);
+    }
+
+    function testTransferAll() public withFees {
+        mint(alice, 1e18);
+        mint(bob, 1e18);
+
+        uint256 balance = creator.balance;
+        uint256 feeBalance = fees.balance;
+        uint256 expectedFee = (2e18 * 500) / 10000;
+        stp.transferAllBalances();
+        assertEq(creator.balance, balance + 2e18 - expectedFee);
+        assertEq(fees.balance, feeBalance + expectedFee);
     }
 }

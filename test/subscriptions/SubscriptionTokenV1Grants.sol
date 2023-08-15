@@ -3,18 +3,18 @@ pragma solidity ^0.8.17;
 
 import "@forge/Test.sol";
 import "@forge/console2.sol";
-import "src/subscriptions/SubscriptionNFTV1.sol";
+import "src/subscriptions/SubscriptionTokenV1.sol";
 import "src/tokens/ERC20Token.sol";
 import "./BaseTest.t.sol";
 
-contract SubscriptionNFTV1GrantsTest is BaseTest {
+contract SubscriptionTokenV1GrantsTest is BaseTest {
     function setUp() public {
         deal(alice, 1e19);
         deal(bob, 1e19);
         deal(charlie, 1e19);
         deal(creator, 1e19);
         deal(fees, 1e19);
-        stp = createETHManifest(1, 0);
+        stp = createETHSub(1, 0);
     }
 
     function testGrant() public {
@@ -49,7 +49,7 @@ contract SubscriptionNFTV1GrantsTest is BaseTest {
     function testGrantRefund() public {
         vm.startPrank(creator);
         stp.grantTime(list(alice), 1e15);
-        stp.refund(list(alice));
+        stp.refund(0, list(alice));
         vm.stopPrank();
         assertEq(stp.balanceOf(alice), 0);
     }
@@ -58,7 +58,7 @@ contract SubscriptionNFTV1GrantsTest is BaseTest {
         mint(alice, 1e18);
         vm.startPrank(creator);
         stp.grantTime(list(alice), 1e15);
-        stp.refund(list(alice));
+        stp.refund(0, list(alice));
         vm.stopPrank();
         assertEq(stp.balanceOf(alice), 0);
     }

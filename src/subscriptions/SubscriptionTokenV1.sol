@@ -19,7 +19,7 @@ import "@openzeppelin-upgradeable/contracts/token/ERC721/ERC721Upgradeable.sol";
  *      additional functionalities for granting time, refunding accounts, fees, etc. This contract is designed to be used with
  *      Clones, but is not designed to be upgradeable. Added functionality will come with new versions.
  */
-contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpgradeable {
+contract SubscriptionTokenV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpgradeable {
     using SafeERC20 for IERC20;
     using StringsUpgradeable for uint256;
 
@@ -43,6 +43,7 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timePurchased, uint256 expiresAt
     );
 
+    /// @dev Emitted when a subscriber is granted time by the creator
     event Grant(address indexed account, uint256 tokenId, uint256 secondsGranted, uint256 expiresAt);
 
     /// @dev Emitted when the creator refunds a subscribers remaining time
@@ -61,6 +62,11 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         uint256 secondsGranted;
         uint256 grantOffset;
         uint256 purchaseOffset;
+    }
+
+    struct ReferralCode {
+        uint16 rewardBpsMin;
+        uint16 rewardBpsMax;
     }
 
     /// @dev The metadata URI for the contract
@@ -102,6 +108,9 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
     /// @dev The subscription state for each account
     mapping(address => Subscription) private _subscriptions;
 
+    /// @dev The collection or referral codes for referral rewards
+    mapping(uint256 => ReferralCode) private _referralCodes;
+
     ////////////////////////////////////
 
     constructor() {
@@ -116,8 +125,8 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
     /**
      * @dev Initialize acts as the constructor, as this contract is intended to work with proxy contracts.
      *
-     * @param name the name of the NFT collection
-     * @param symbol the symbol of the NFT collection
+     * @param name the name of the collection
+     * @param symbol the symbol of the collection
      * @param contractUri the metadata URI for the collection
      * @param tokenUri the metadata URI for the tokens
      * @param owner the owner address, for owner only functionality
@@ -172,6 +181,16 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         mintFor(msg.sender, numTokens);
     }
 
+    /**
+     * @notice Mint or renew a subscription for sender, with referral rewards for a referrer
+     * @param numTokens the amount of ERC20 tokens or native tokens to transfer
+     * @param referralCode the referral code to use for rewards
+     * @param referrer the referrer address and reward recipient
+     */
+    function mintWithReferral(uint256 numTokens, uint256 referralCode, address referrer) external payable {
+        mintWithReferralFor(msg.sender, numTokens, referralCode, referrer);
+    }
+
     /////////////////////////
     // Creator Calls
     /////////////////////////
@@ -184,6 +203,16 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
     }
 
     /**
+     * @notice Withdraw available funds and transfer fees as the owner
+     */
+    function withdrawAndTransferFees() external {
+        withdrawTo(msg.sender);
+        if (_feeBalance > 0) {
+            _transferFees();
+        }
+    }
+
+    /**
      * @notice Withdraw available funds as the owner to a different account
      * @param account the account to transfer funds to
      */
@@ -193,13 +222,14 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         _transferToCreator(account, balance);
     }
 
-    /// TODO: withdrawAndTransferFees
-
     /**
      * @notice Refund one or more accounts remaining purchased time
+     * @dev This refunds accounts using creator balance, and can also transfer in to top up the fund
+     * @param numTokensIn an optional amount of tokens to transfer in before refunding
      * @param accounts the list of accounts to refund
      */
-    function refund(address[] memory accounts) external onlyOwner {
+    function refund(uint256 numTokensIn, address[] memory accounts) external payable onlyOwner {
+        _transferIn(msg.sender, numTokensIn);
         require(canRefund(accounts), "Insufficient balance for refund");
         for (uint256 i = 0; i < accounts.length; i++) {
             _refund(accounts[i]);
@@ -207,16 +237,25 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
     }
 
     /**
-     * @notice Verify that the creator has sufficient balance in the contract to refund the accounts
+     * @notice Refund all remaining purchased time for accounts
      * @param accounts the list of accounts to refund
-     * @return true if the creator balance is sufficient
+     * @return the total number of refundable tokens
      */
-    function canRefund(address[] memory accounts) public view returns (bool) {
+    function refundableTokenBalanceOfAll(address[] memory accounts) public view returns (uint256) {
         uint256 amount;
         for (uint256 i = 0; i < accounts.length; i++) {
             amount += refundableBalanceOf(accounts[i]);
         }
-        return amount <= creatorBalance();
+        return amount * _tokensPerSecond;
+    }
+
+    /**
+     * @notice Can the refund be processed for the given accounts with the current balance
+     * @param accounts the list of accounts to refund
+     * @return true if the refund can be processed
+     */
+    function canRefund(address[] memory accounts) public view returns (bool) {
+        return creatorBalance() >= refundableTokenBalanceOfAll(accounts);
     }
 
     /**
@@ -269,11 +308,56 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
     }
 
     /**
+     * @notice Mint or renew a subscription for a specific account, with referral rewards for a referrer
+     * @param account the account to mint or renew time for
+     * @param numTokens the amount of ERC20 tokens or native tokens to transfer
+     * @param referralCode the referral code to use for rewards
+     * @param referrer the referrer address and reward recipient
+     */
+    function mintWithReferralFor(address account, uint256 numTokens, uint256 referralCode, address referrer)
+        public
+        payable
+        whenNotPaused
+        validAmount(numTokens)
+    {
+        // Transfer all here
+        uint256 finalAmount = _transferIn(msg.sender, numTokens);
+
+        // Calculate rewards and transfer rewards out
+        uint256 rewardAmount = _rewardAmount(finalAmount, referralCode);
+        if (rewardAmount > 0) {
+            _transferOut(referrer, rewardAmount);
+        }
+
+        _purchaseTime(account, finalAmount);
+    }
+
+    /**
      * @notice Transfer any available fees to the fee collector
      */
     function transferFees() external {
         require(_feeBalance > 0, "No fees to collect");
         _transferFees();
+    }
+
+    /**
+     * @notice Transfer all balances to the creator and fee collector (if applicable)
+     * @dev This is a way for EOAs to pay gas fees on behalf of the creator (automation, etc)
+     */
+    function transferAllBalances() external {
+        _transferAllBalances(owner());
+    }
+
+    /**
+     * @notice Reconcile the ERC20 balance of the contract with the internal state
+     * @dev The prevents lost funds if ERC20 tokens are transferred directly to the contract account
+     */
+    function reconcileERC20Balance() external {
+        require(_erc20, "Only for ERC20 tokens");
+        uint256 balance = _token.balanceOf(address(this));
+        uint256 expectedBalance = _tokensIn - _tokensOut;
+        require(balance > expectedBalance, "Tokens already reconciled");
+        _tokensIn += balance - expectedBalance;
     }
 
     /////////////////////////
@@ -310,6 +394,44 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         }
         _feeCollector = newCollector;
         emit FeeCollectorChange(msg.sender, newCollector);
+    }
+
+    /////////////////////////
+    // Referral Rewards
+    /////////////////////////
+
+    /**
+     * @notice Create a referral code for giving rewards to referrers on mint
+     * @dev It's possible to create a spread here for variable rewards
+     * @param code the unique integer code for the referral
+     * @param minBps the minimum reward basis points
+     * @param maxBps the maximum reward basis points
+     */
+    function createReferralCode(uint256 code, uint16 minBps, uint16 maxBps) external onlyOwner {
+        require(maxBps <= _MAX_BIPS, "maxBps too high");
+        require(minBps <= maxBps, "minBps > maxBps");
+        ReferralCode memory existing = _referralCodes[code];
+        require(existing.rewardBpsMin == existing.rewardBpsMax && existing.rewardBpsMin == 0, "Referral code exists");
+        _referralCodes[code] = ReferralCode(minBps, maxBps);
+    }
+
+    /**
+     * @notice Delete a referral code
+     * @param code the unique integer code for the referral
+     */
+    function deleteReferralCode(uint256 code) external onlyOwner {
+        delete _referralCodes[code];
+    }
+
+    /**
+     * @notice Fetch the reward basis points for a given referral code
+     * @param code the unique integer code for the referral
+     * @return minBps the minimum reward basis points
+     * @return maxBps the maximum reward basis points
+     */
+    function referralRewards(uint256 code) external view returns (uint16 minBps, uint16 maxBps) {
+        ReferralCode memory existing = _referralCodes[code];
+        return (existing.rewardBpsMin, existing.rewardBpsMax);
     }
 
     ////////////////////////
@@ -392,6 +514,19 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         emit FeeTransfer(msg.sender, _feeCollector, balance);
     }
 
+    /// @dev Transfer all remaining balances to the creator and fee collector (if applicable)
+    function _transferAllBalances(address balanceRecipient) internal {
+        uint256 balance = creatorBalance();
+        if (balance > 0) {
+            _transferToCreator(balanceRecipient, balance);
+        }
+
+        // Transfer out all remaining funds
+        if (_feeBalance > 0) {
+            _transferFees();
+        }
+    }
+
     /// @dev Grant time to a given account
     function _grantTime(address account, uint256 numSeconds) internal {
         Subscription memory sub = _fetchSubscription(account);
@@ -443,6 +578,26 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         emit Refund(account, sub.tokenId, tokens, balance);
     }
 
+    /// @dev Compute the reward amount for a given token amount and referral code
+    function _rewardAmount(uint256 tokenAmount, uint256 referralCode) internal view returns (uint256) {
+        ReferralCode memory code = _referralCodes[referralCode];
+        if (code.rewardBpsMin == 0 && code.rewardBpsMax == 0) {
+            return 0;
+        }
+
+        uint256 rewardBps;
+        uint256 delta = code.rewardBpsMax - code.rewardBpsMin;
+        if (delta == 0) {
+            rewardBps = code.rewardBpsMin;
+        } else {
+            // Psuedo random value between min and max (variable reward)
+            rewardBps = code.rewardBpsMin
+                + uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender, tokenAmount, _tokensOut))) % delta;
+        }
+
+        return (tokenAmount * rewardBps) / _MAX_BIPS;
+    }
+
     /// @dev The timestamp when the subscription expires
     function _subscriptionExpiresAt(Subscription memory sub) internal view returns (uint256 numSeconds) {
         return block.timestamp + _purchaseTimeRemaining(sub) + _grantTimeRemaining(sub);
@@ -489,7 +644,13 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
         returns (uint256 tokenId, uint256 refundableAmount, uint256 expiresAt)
     {
         Subscription memory sub = _subscriptions[account];
-        return (sub.tokenId, sub.secondsPurchased, _subscriptionExpiresAt(sub));
+
+        uint256 expires = _subscriptionExpiresAt(sub);
+        if (expires == block.timestamp) {
+            expires = 0;
+        }
+
+        return (sub.tokenId, sub.secondsPurchased, expires);
     }
 
     /**
@@ -501,7 +662,7 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
     }
 
     /**
-     * @notice The refundable balance for a given account
+     * @notice The refundable time balance for a given account
      * @param account the account to check
      * @return numSeconds the number of seconds which can be refunded
      */
@@ -583,23 +744,12 @@ contract SubscriptionNFTV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpg
      *         and pausing the contract to prevent further inflows.
      */
     function renounceOwnership() public override onlyOwner {
-        uint256 balance = creatorBalance();
-        if (balance > 0) {
-            _transferToCreator(msg.sender, balance);
-        }
-
-        // Transfer out all remaining funds
-        if (_feeBalance > 0) {
-            _transferFees();
-        }
-
-        // Pause the contract
+        _transferAllBalances(msg.sender);
         _pause();
-
         _transferOwnership(address(0));
     }
 
-    /// @dev Transfers may occur, if and only if the destination does not have a subscription
+    /// @dev Transfers may occur if the destination does not have a subscription
     function _beforeTokenTransfer(address from, address to, uint256, /* tokenId */ uint256 /* batchSize */ )
         internal
         override

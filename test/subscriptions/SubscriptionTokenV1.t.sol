@@ -3,16 +3,16 @@ pragma solidity ^0.8.17;
 
 import "@forge/Test.sol";
 import "@forge/console2.sol";
-import "src/subscriptions/SubscriptionNFTV1.sol";
+import "src/subscriptions/SubscriptionTokenV1.sol";
 import "src/tokens/ERC20Token.sol";
 import "./BaseTest.t.sol";
 
-contract SubscriptionNFTV1Test is BaseTest {
+contract SubscriptionTokenV1Test is BaseTest {
     function setUp() public {
-        stp = new SubscriptionNFTV1();
+        stp = new SubscriptionTokenV1();
 
         vm.store(address(stp), bytes32(uint256(0)), bytes32(0));
-        stp.initialize("Meow Manifest", "MEOW", "curi", "turi", creator, 2, 4, 0, address(0), address(0));
+        stp.initialize("Meow Sub", "MEOW", "curi", "turi", creator, 2, 4, 0, address(0), address(0));
 
         deal(alice, 1e19);
         deal(bob, 1e19);
@@ -31,19 +31,19 @@ contract SubscriptionNFTV1Test is BaseTest {
         vm.store(address(stp), bytes32(uint256(0)), bytes32(0));
 
         vm.expectRevert("Owner address cannot be 0x0");
-        stp.initialize("Meow Manifest", "MEOW", "curi", "turi", address(0), 2, 4, 0, address(0), address(0));
+        stp.initialize("Meow Sub", "MEOW", "curi", "turi", address(0), 2, 4, 0, address(0), address(0));
 
         vm.expectRevert("Tokens per second must be > 0");
-        stp.initialize("Meow Manifest", "MEOW", "curi", "turi", creator, 0, 4, 0, address(0), address(0));
+        stp.initialize("Meow Sub", "MEOW", "curi", "turi", creator, 0, 4, 0, address(0), address(0));
 
         vm.expectRevert("Fee bps too high");
-        stp.initialize("Meow Manifest", "MEOW", "curi", "turi", creator, 2, 4, 1500, fees, address(0));
+        stp.initialize("Meow Sub", "MEOW", "curi", "turi", creator, 2, 4, 1500, fees, address(0));
 
         vm.expectRevert("Fees required when fee recipient is present");
-        stp.initialize("Meow Manifest", "MEOW", "curi", "turi", creator, 2, 4, 0, fees, address(0));
+        stp.initialize("Meow Sub", "MEOW", "curi", "turi", creator, 2, 4, 0, fees, address(0));
 
         vm.expectRevert("Min purchase seconds must be > 0");
-        stp.initialize("Meow Manifest", "MEOW", "curi", "turi", creator, 2, 0, 0, address(0), address(0));
+        stp.initialize("Meow Sub", "MEOW", "curi", "turi", creator, 2, 0, 0, address(0), address(0));
     }
 
     function testMint() public prank(alice) {
@@ -150,11 +150,11 @@ contract SubscriptionNFTV1Test is BaseTest {
         vm.expectEmit(true, true, false, true, address(stp));
         emit Refund(alice, tokenId, 1e18, 1e18 / 2);
         (creator, 2e18);
-        stp.refund(list(alice));
+        stp.refund(0, list(alice));
         assertEq(address(stp).balance, 0);
         vm.stopPrank();
         vm.expectRevert("Ownable: caller is not the owner");
-        stp.refund(list(alice));
+        stp.refund(0, list(alice));
     }
 
     function testPartialRefund() public {
@@ -164,7 +164,7 @@ contract SubscriptionNFTV1Test is BaseTest {
         vm.startPrank(creator);
         vm.expectEmit(true, true, false, true, address(stp));
         emit Refund(alice, 1, 5e17, 5e17 / 2);
-        stp.refund(list(alice));
+        stp.refund(0, list(alice));
         vm.stopPrank();
     }
 
@@ -172,9 +172,17 @@ contract SubscriptionNFTV1Test is BaseTest {
         mint(alice, 1e18);
         uint256 balance = bob.balance;
         vm.startPrank(creator);
-        stp.refund(list(bob));
+        stp.refund(0, list(bob));
         vm.stopPrank();
         assertEq(balance, bob.balance);
+    }
+
+    ///
+    function testRefundCalc() public {
+        mint(alice, 1e18);
+        assertEq(1e18, stp.refundableTokenBalanceOfAll(list(alice, bob)));
+        mint(bob, 1e18);
+        assertEq(2e18, stp.refundableTokenBalanceOfAll(list(alice, bob)));
     }
 
     function testRefundNoBalance() public {
@@ -183,7 +191,13 @@ contract SubscriptionNFTV1Test is BaseTest {
         assertFalse(stp.canRefund(list(alice)));
         vm.startPrank(creator);
         vm.expectRevert("Insufficient balance for refund");
-        stp.refund(list(alice));
+        stp.refund(0, list(alice));
+
+        // Send eth to contract while refunding
+        vm.expectEmit(true, true, false, true, address(stp));
+        emit Refund(alice, 1, 1e18, 1e18 / 2);
+        stp.refund{value: 1e18}(1e18, list(alice));
+        assertEq(0, address(stp).balance);
         vm.stopPrank();
     }
 
@@ -262,7 +276,7 @@ contract SubscriptionNFTV1Test is BaseTest {
         mint(alice, 1e18);
         uint256 beforeBalance = token().balanceOf(alice);
         vm.startPrank(creator);
-        stp.refund(list(alice));
+        stp.refund(0, list(alice));
         vm.stopPrank();
         assertEq(beforeBalance + 1e18, token().balanceOf(alice));
     }
@@ -272,7 +286,7 @@ contract SubscriptionNFTV1Test is BaseTest {
         vm.startPrank(creator);
         stp.withdraw();
         vm.expectRevert("Insufficient balance for refund");
-        stp.refund(list(alice));
+        stp.refund(0, list(alice));
         vm.stopPrank();
     }
 
@@ -323,5 +337,29 @@ contract SubscriptionNFTV1Test is BaseTest {
         stp.renounceOwnership();
         vm.stopPrank();
         assertEq(stp.creatorBalance(), 0);
+    }
+
+    function testTransferAll() public {
+        mint(alice, 1e18);
+        mint(bob, 1e18);
+
+        uint256 balance = creator.balance;
+        stp.transferAllBalances();
+        assertEq(creator.balance, balance + 2e18);
+    }
+
+    /// Reconciation
+    function testReconcileEth() public {
+        vm.expectRevert("Only for ERC20 tokens");
+        stp.reconcileERC20Balance();
+    }
+
+    function testReconcile() public erc20 {
+        vm.expectRevert("Tokens already reconciled");
+        stp.reconcileERC20Balance();
+
+        token().transfer(address(stp), 1e17);
+        stp.reconcileERC20Balance();
+        assertEq(stp.creatorBalance(), 1e17);
     }
 }
