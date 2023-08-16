@@ -8,6 +8,7 @@ import "@openzeppelin-upgradeable/contracts/utils/StringsUpgradeable.sol";
 import "@openzeppelin-upgradeable/contracts/access/OwnableUpgradeable.sol";
 import "@openzeppelin-upgradeable/contracts/security/PausableUpgradeable.sol";
 import "@openzeppelin-upgradeable/contracts/token/ERC721/ERC721Upgradeable.sol";
+import "@openzeppelin-upgradeable/contracts/security/ReentrancyGuardUpgradeable.sol";
 
 /**
  * @title Subscription Token
@@ -19,7 +20,12 @@ import "@openzeppelin-upgradeable/contracts/token/ERC721/ERC721Upgradeable.sol";
  *      additional functionalities for granting time, refunding accounts, fees, etc. This contract is designed to be used with
  *      Clones, but is not designed to be upgradeable. Added functionality will come with new versions.
  */
-contract SubscriptionTokenV1 is ERC721Upgradeable, OwnableUpgradeable, PausableUpgradeable {
+contract SubscriptionTokenV1 is
+    ERC721Upgradeable,
+    OwnableUpgradeable,
+    ReentrancyGuardUpgradeable,
+    PausableUpgradeable
+{
     using SafeERC20 for IERC20;
     using StringsUpgradeable for uint256;
 
@@ -54,6 +60,15 @@ contract SubscriptionTokenV1 is ERC721Upgradeable, OwnableUpgradeable, PausableU
 
     /// @dev Emitted when the fee collector is updated
     event FeeCollectorChange(address indexed from, address indexed to);
+
+    /// @dev Emitted when a reward is paid out
+    event Reward(address indexed buyer, address indexed referrer, uint256 referralId, uint256 rewardAmount);
+
+    /// @dev Emitted when a new referral code is created
+    event RewardCreated(uint256 id, uint16 rewardBpsMin, uint16 rewardBpsMax);
+
+    /// @dev Emitted when a referral code is deleted
+    event RewardDestroyed(uint256 id);
 
     /// @dev The subscription struct which holds the state of a subscription for an account
     struct Subscription {
@@ -159,6 +174,7 @@ contract SubscriptionTokenV1 is ERC721Upgradeable, OwnableUpgradeable, PausableU
         __ERC721_init(name, symbol);
         _transferOwnership(owner);
         __Pausable_init_unchained();
+        __ReentrancyGuard_init();
         _contractURI = contractUri;
         _tokenURI = tokenUri;
         _tokensPerSecond = tokensPerSecond;
@@ -327,6 +343,7 @@ contract SubscriptionTokenV1 is ERC721Upgradeable, OwnableUpgradeable, PausableU
         uint256 rewardAmount = _rewardAmount(finalAmount, referralCode);
         if (rewardAmount > 0) {
             _transferOut(referrer, rewardAmount);
+            emit Reward(account, referrer, referralCode, rewardAmount);
         }
 
         _purchaseTime(account, finalAmount);
@@ -413,6 +430,7 @@ contract SubscriptionTokenV1 is ERC721Upgradeable, OwnableUpgradeable, PausableU
         ReferralCode memory existing = _referralCodes[code];
         require(existing.rewardBpsMin == existing.rewardBpsMax && existing.rewardBpsMin == 0, "Referral code exists");
         _referralCodes[code] = ReferralCode(minBps, maxBps);
+        emit RewardCreated(code, minBps, maxBps);
     }
 
     /**
@@ -421,6 +439,7 @@ contract SubscriptionTokenV1 is ERC721Upgradeable, OwnableUpgradeable, PausableU
      */
     function deleteReferralCode(uint256 code) external onlyOwner {
         delete _referralCodes[code];
+        emit RewardDestroyed(code);
     }
 
     /**
@@ -444,7 +463,6 @@ contract SubscriptionTokenV1 is ERC721Upgradeable, OwnableUpgradeable, PausableU
 
         // Adjust offset to account for existing time
         if (block.timestamp > sub.purchaseOffset + sub.secondsPurchased) {
-            // TODO: test revert on large purchase
             sub.purchaseOffset = block.timestamp - sub.secondsPurchased;
         }
 
@@ -473,14 +491,17 @@ contract SubscriptionTokenV1 is ERC721Upgradeable, OwnableUpgradeable, PausableU
     }
 
     /// @dev Transfer tokens into the contract, either native or ERC20
-    function _transferIn(address from, uint256 amount) internal returns (uint256) {
+    function _transferIn(address from, uint256 amount) internal nonReentrant returns (uint256) {
         uint256 finalAmount = amount;
         if (_erc20) {
+            // Handle tokens which take fees
             require(msg.value == 0, "Native tokens not accepted for ERC20 subscriptions");
-            uint256 balance = _token.balanceOf(from);
+            uint256 preBalance = _token.balanceOf(from);
             uint256 allowance = _token.allowance(from, address(this));
-            require(balance >= amount && allowance >= amount, "Insufficient Balance or Allowance");
+            require(preBalance >= amount && allowance >= amount, "Insufficient Balance or Allowance");
             _token.safeTransferFrom(from, address(this), amount);
+            uint256 postBalance = _token.balanceOf(from);
+            finalAmount = preBalance - postBalance;
         } else {
             require(msg.value == amount, "Purchase amount must match value sent");
         }
@@ -496,7 +517,7 @@ contract SubscriptionTokenV1 is ERC721Upgradeable, OwnableUpgradeable, PausableU
     }
 
     /// @dev Transfer tokens out of the contract, either native or ERC20
-    function _transferOut(address to, uint256 amount) internal {
+    function _transferOut(address to, uint256 amount) internal nonReentrant {
         _tokensOut += amount;
         if (_erc20) {
             _token.safeTransfer(to, amount);
@@ -532,7 +553,6 @@ contract SubscriptionTokenV1 is ERC721Upgradeable, OwnableUpgradeable, PausableU
         Subscription memory sub = _fetchSubscription(account);
         // Adjust offset to account for existing time
         if (block.timestamp > sub.grantOffset + sub.secondsGranted) {
-            // TODO: test revert on large purchase
             sub.grantOffset = block.timestamp - sub.secondsGranted;
         }
 

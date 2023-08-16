@@ -6,6 +6,7 @@ import "@forge/console2.sol";
 import "src/subscriptions/SubscriptionTokenV1.sol";
 import "src/tokens/ERC20Token.sol";
 import "./BaseTest.t.sol";
+import "../finance/CrowdFinancingV1/mocks/MockFeeToken.sol";
 
 contract SubscriptionTokenV1Test is BaseTest {
     function setUp() public {
@@ -250,6 +251,23 @@ contract SubscriptionTokenV1Test is BaseTest {
         stp.mint{value: 1e17}(1e18);
         vm.expectRevert("Insufficient Balance or Allowance");
         stp.mint(1e18);
+    }
+
+    function testERC20FeeTakingToken() public {
+        MockFeeToken _token = new MockFeeToken(
+          "FIAT",
+          "FIAT",
+          1e21
+        );
+        _token.transfer(alice, 1e20);
+        SubscriptionTokenV1 m = new SubscriptionTokenV1();
+        vm.store(address(m), bytes32(uint256(0)), bytes32(0));
+        m.initialize("Meow Sub", "MEOW", "curi", "turi", creator, 2, 2, 0, address(0), address(_token));
+        vm.startPrank(alice);
+        _token.approve(address(m), 1e18);
+        m.mint(1e18);
+        assertEq(m.balanceOf(alice), 1e18 / 2 / 2);
+        vm.stopPrank();
     }
 
     function testWithdrawERC20() public erc20 {

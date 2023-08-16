@@ -17,6 +17,8 @@ contract SubscriptionTokenV1ReferralTest is BaseTest {
     }
 
     function testCreate() public prank(creator) {
+        vm.expectEmit(true, true, false, true, address(stp));
+        emit RewardCreated(1, 500, 500);
         stp.createReferralCode(1, 500, 500);
         (uint16 min, uint16 max) = stp.referralRewards(1);
         assertEq(min, 500);
@@ -35,6 +37,8 @@ contract SubscriptionTokenV1ReferralTest is BaseTest {
 
     function testDelete() public prank(creator) {
         stp.createReferralCode(1, 500, 500);
+        vm.expectEmit(true, true, false, true, address(stp));
+        emit RewardDestroyed(1);
         stp.deleteReferralCode(1);
         (uint16 min, uint16 max) = stp.referralRewards(1);
         assertEq(min, 0);
@@ -56,6 +60,8 @@ contract SubscriptionTokenV1ReferralTest is BaseTest {
 
         uint256 balance = charlie.balance;
         vm.startPrank(alice);
+        vm.expectEmit(true, true, false, true, address(stp));
+        emit Reward(alice, charlie, 1, 5e15);
         stp.mintWithReferral{value: 1e17}(1e17, 1, charlie);
         vm.stopPrank();
         assertEq(charlie.balance, balance + 5e15);
