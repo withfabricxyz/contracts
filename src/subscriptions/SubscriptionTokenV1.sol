@@ -46,14 +46,18 @@ contract SubscriptionTokenV1 is
 
     /// @dev Emitted when a subscriber purchases time
     event Purchase(
-        address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timePurchased, uint256 expiresAt
+        address indexed account,
+        uint256 indexed tokenId,
+        uint256 tokensTransferred,
+        uint256 timePurchased,
+        uint256 expiresAt
     );
 
     /// @dev Emitted when a subscriber is granted time by the creator
-    event Grant(address indexed account, uint256 tokenId, uint256 secondsGranted, uint256 expiresAt);
+    event Grant(address indexed account, uint256 indexed tokenId, uint256 secondsGranted, uint256 expiresAt);
 
     /// @dev Emitted when the creator refunds a subscribers remaining time
-    event Refund(address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timeReclaimed);
+    event Refund(address indexed account, uint256 indexed tokenId, uint256 tokensTransferred, uint256 timeReclaimed);
 
     /// @dev Emitted when the fees are transferred to the collector
     event FeeTransfer(address indexed from, address indexed to, uint256 tokensTransferred);
@@ -62,7 +66,7 @@ contract SubscriptionTokenV1 is
     event FeeCollectorChange(address indexed from, address indexed to);
 
     /// @dev Emitted when a reward is paid out
-    event Reward(address indexed buyer, address indexed referrer, uint256 referralId, uint256 rewardAmount);
+    event Reward(uint256 indexed tokenId, address indexed referrer, uint256 indexed referralId, uint256 rewardAmount);
 
     /// @dev Emitted when a new referral code is created
     event RewardCreated(uint256 id, uint16 rewardBpsMin, uint16 rewardBpsMax);
@@ -339,14 +343,14 @@ contract SubscriptionTokenV1 is
         // Transfer all here
         uint256 finalAmount = _transferIn(msg.sender, numTokens);
 
+        uint256 tokenId = _purchaseTime(account, finalAmount);
+
         // Calculate rewards and transfer rewards out
         uint256 rewardAmount = _rewardAmount(finalAmount, referralCode);
         if (rewardAmount > 0) {
             _transferOut(referrer, rewardAmount);
-            emit Reward(account, referrer, referralCode, rewardAmount);
+            emit Reward(tokenId, referrer, referralCode, rewardAmount);
         }
-
-        _purchaseTime(account, finalAmount);
     }
 
     /**
@@ -458,7 +462,7 @@ contract SubscriptionTokenV1 is
     ////////////////////////
 
     /// @dev Add time to a given account (transfer happens before this is called)
-    function _purchaseTime(address account, uint256 amount) internal {
+    function _purchaseTime(address account, uint256 amount) internal returns (uint256) {
         Subscription memory sub = _fetchSubscription(account);
 
         // Adjust offset to account for existing time
@@ -470,6 +474,7 @@ contract SubscriptionTokenV1 is
         sub.secondsPurchased += tv;
         _subscriptions[account] = sub;
         emit Purchase(account, sub.tokenId, amount, tv, _subscriptionExpiresAt(sub));
+        return sub.tokenId;
     }
 
     /// @dev Get or create a new subscription (and mint)

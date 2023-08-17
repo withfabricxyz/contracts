@@ -15,14 +15,18 @@ abstract contract BaseTest is Test {
 
     /// @dev Emitted when a subscriber purchases time
     event Purchase(
-        address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timePurchased, uint256 expiresAt
+        address indexed account,
+        uint256 indexed tokenId,
+        uint256 tokensTransferred,
+        uint256 timePurchased,
+        uint256 expiresAt
     );
 
     /// @dev Emitted when a subscriber is granted time by the creator
-    event Grant(address indexed account, uint256 tokenId, uint256 secondsGranted, uint256 expiresAt);
+    event Grant(address indexed account, uint256 indexed tokenId, uint256 secondsGranted, uint256 expiresAt);
 
     /// @dev Emitted when the creator refunds a subscribers remaining time
-    event Refund(address indexed account, uint256 tokenId, uint256 tokensTransferred, uint256 timeReclaimed);
+    event Refund(address indexed account, uint256 indexed tokenId, uint256 tokensTransferred, uint256 timeReclaimed);
 
     /// @dev Emitted when the fees are transferred to the collector
     event FeeTransfer(address indexed from, address indexed to, uint256 tokensTransferred);
@@ -31,7 +35,7 @@ abstract contract BaseTest is Test {
     event FeeCollectorChange(address indexed from, address indexed to);
 
     /// @dev Emitted when a reward is paid out
-    event Reward(address indexed buyer, address indexed referrer, uint256 referralId, uint256 rewardAmount);
+    event Reward(uint256 indexed tokenId, address indexed referrer, uint256 indexed referralId, uint256 rewardAmount);
 
     /// @dev Emitted when a new referral code is created
     event RewardCreated(uint256 id, uint16 rewardBpsMin, uint16 rewardBpsMax);

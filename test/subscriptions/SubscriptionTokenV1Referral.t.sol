@@ -61,7 +61,7 @@ contract SubscriptionTokenV1ReferralTest is BaseTest {
         uint256 balance = charlie.balance;
         vm.startPrank(alice);
         vm.expectEmit(true, true, false, true, address(stp));
-        emit Reward(alice, charlie, 1, 5e15);
+        emit Reward(1, charlie, 1, 5e15);
         stp.mintWithReferral{value: 1e17}(1e17, 1, charlie);
         vm.stopPrank();
         assertEq(charlie.balance, balance + 5e15);
