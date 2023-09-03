@@ -20,6 +20,7 @@ import "@openzeppelin-upgradeable/contracts/security/ReentrancyGuardUpgradeable.
  *      additional functionalities for granting time, refunding accounts, fees, etc. This contract is designed to be used with
  *      Clones, but is not designed to be upgradeable. Added functionality will come with new versions.
  */
+
 contract SubscriptionTokenV1 is
     ERC721Upgradeable,
     OwnableUpgradeable,
@@ -28,6 +29,15 @@ contract SubscriptionTokenV1 is
 {
     using SafeERC20 for IERC20;
     using StringsUpgradeable for uint256;
+
+    /// @dev The number of reward halvings
+    uint256 private constant _NUM_REWARD_HALVINGS = 6;
+
+    /// @dev The starting reward multiplier for subscriber rewards
+    uint256 private constant _STARTING_REWARD_MULTIPLIER = 2 ** _NUM_REWARD_HALVINGS;
+
+    /// @dev The number of seconds until the reward multipler is halved
+    uint256 private constant _REWARD_MULTIPLIER_HALVING_SECONDS = 30 days;
 
     /// @dev Maximum fee basis points (12.5%)
     uint16 private constant _MAX_FEE_BIPS = 1250;
@@ -81,6 +91,8 @@ contract SubscriptionTokenV1 is
         uint256 secondsGranted;
         uint256 grantOffset;
         uint256 purchaseOffset;
+        uint256 rewardPoints;
+        uint256 rewardWithdrawn;
     }
 
     struct ReferralCode {
@@ -123,6 +135,9 @@ contract SubscriptionTokenV1 is
 
     /// @dev Flag which determines if the contract is erc20 denominated
     bool private _erc20;
+
+    /// @dev The block timestamp of the contract deployment
+    uint256 private _deployBlockTime;
 
     /// @dev The subscription state for each account
     mapping(address => Subscription) private _subscriptions;
@@ -187,6 +202,7 @@ contract SubscriptionTokenV1 is
         _feeCollector = feeRecipient;
         _token = IERC20(erc20TokenAddr);
         _erc20 = erc20TokenAddr != address(0);
+        _deployBlockTime = block.timestamp;
     }
 
     /////////////////////////
@@ -244,12 +260,16 @@ contract SubscriptionTokenV1 is
 
     /**
      * @notice Refund one or more accounts remaining purchased time
-     * @dev This refunds accounts using creator balance, and can also transfer in to top up the fund
+     * @dev This refunds accounts using creator balance, and can also transfer in to top up the fund. Any excess value is withdrawable, but subject to fees.
      * @param numTokensIn an optional amount of tokens to transfer in before refunding
      * @param accounts the list of accounts to refund
      */
     function refund(uint256 numTokensIn, address[] memory accounts) external payable onlyOwner {
-        _transferIn(msg.sender, numTokensIn);
+        if (numTokensIn > 0) {
+            _transferIn(msg.sender, numTokensIn);
+        } else if (msg.value > 0) {
+            revert("Unexpected value transfer");
+        }
         require(canRefund(accounts), "Insufficient balance for refund");
         for (uint256 i = 0; i < accounts.length; i++) {
             _refund(accounts[i]);
@@ -472,6 +492,7 @@ contract SubscriptionTokenV1 is
 
         uint256 tv = timeValue(amount);
         sub.secondsPurchased += tv;
+        sub.rewardPoints += amount * rewardMultiplier();
         _subscriptions[account] = sub;
         emit Purchase(account, sub.tokenId, amount, tv, _subscriptionExpiresAt(sub));
         return sub.tokenId;
@@ -482,7 +503,7 @@ contract SubscriptionTokenV1 is
         Subscription memory sub = _subscriptions[account];
         if (sub.tokenId == 0) {
             _tokenCounter += 1;
-            sub = Subscription(_tokenCounter, 0, 0, block.timestamp, block.timestamp);
+            sub = Subscription(_tokenCounter, 0, 0, block.timestamp, block.timestamp, 0, 0);
             _safeMint(account, sub.tokenId);
         }
         return sub;
@@ -497,6 +518,7 @@ contract SubscriptionTokenV1 is
 
     /// @dev Transfer tokens into the contract, either native or ERC20
     function _transferIn(address from, uint256 amount) internal nonReentrant returns (uint256) {
+        require(amount > 0, "Transfer amount must be > 0");
         uint256 finalAmount = amount;
         if (_erc20) {
             // Handle tokens which take fees
@@ -523,6 +545,7 @@ contract SubscriptionTokenV1 is
 
     /// @dev Transfer tokens out of the contract, either native or ERC20
     function _transferOut(address to, uint256 amount) internal nonReentrant {
+        require(amount > 0, "Transfer amount must be > 0");
         _tokensOut += amount;
         if (_erc20) {
             _token.safeTransfer(to, amount);
@@ -635,6 +658,15 @@ contract SubscriptionTokenV1 is
     // Informational
     ////////////////////////
 
+    // TODO: Should this go to 0 to reduce the probability of overflow over time? Y2K problem?
+    function rewardMultiplier() public view returns (uint256 multiplier) {
+        uint256 halvings = (block.timestamp - _deployBlockTime) / _REWARD_MULTIPLIER_HALVING_SECONDS;
+        if (halvings >= _NUM_REWARD_HALVINGS) {
+            return 1;
+        }
+        return _STARTING_REWARD_MULTIPLIER / (2 ** halvings);
+    }
+
     /**
      * @notice The amount of time exchanged for the given number of tokens
      * @param numTokens the number of tokens to exchange for time
@@ -664,12 +696,13 @@ contract SubscriptionTokenV1 is
      * @notice Relevant subscription information for a given account
      * @return tokenId the tokenId for the account
      * @return refundableAmount the number of seconds which can be refunded
+     * @return rewardPoints the number of reward points earned
      * @return expiresAt the timestamp when the subscription expires
      */
     function subscriptionOf(address account)
         public
         view
-        returns (uint256 tokenId, uint256 refundableAmount, uint256 expiresAt)
+        returns (uint256 tokenId, uint256 refundableAmount, uint256 rewardPoints, uint256 expiresAt)
     {
         Subscription memory sub = _subscriptions[account];
 
@@ -678,7 +711,7 @@ contract SubscriptionTokenV1 is
             expires = 0;
         }
 
-        return (sub.tokenId, sub.secondsPurchased, expires);
+        return (sub.tokenId, sub.secondsPurchased, sub.rewardPoints, expires);
     }
 
     /**

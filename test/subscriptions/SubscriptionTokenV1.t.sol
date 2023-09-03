@@ -53,7 +53,7 @@ contract SubscriptionTokenV1Test is BaseTest {
         stp.mint{value: 1e18}(1e18);
         assertEq(address(stp).balance, 1e18);
         assertEq(stp.balanceOf(alice), 5e17);
-        (uint256 tokenId,,) = stp.subscriptionOf(alice);
+        (uint256 tokenId,,,) = stp.subscriptionOf(alice);
         assertEq(stp.ownerOf(tokenId), alice);
         assertEq(stp.tokenURI(1), "turi");
     }
@@ -70,7 +70,7 @@ contract SubscriptionTokenV1Test is BaseTest {
         assertEq(address(stp).balance, 1e18);
         assertEq(stp.balanceOf(bob), 5e17);
         assertEq(stp.balanceOf(alice), 0);
-        (uint256 tokenId,,) = stp.subscriptionOf(bob);
+        (uint256 tokenId,,,) = stp.subscriptionOf(bob);
         assertEq(stp.ownerOf(tokenId), bob);
     }
 
@@ -83,13 +83,13 @@ contract SubscriptionTokenV1Test is BaseTest {
         assertEq(token().balanceOf(address(stp)), 1e18);
         assertEq(stp.balanceOf(bob), 5e17);
         assertEq(stp.balanceOf(alice), 0);
-        (uint256 tokenId,,) = stp.subscriptionOf(bob);
+        (uint256 tokenId,,,) = stp.subscriptionOf(bob);
         assertEq(stp.ownerOf(tokenId), bob);
     }
 
     function testNonSub() public {
         assertEq(stp.balanceOf(alice), 0);
-        (uint256 tokenId,,) = stp.subscriptionOf(alice);
+        (uint256 tokenId,,,) = stp.subscriptionOf(alice);
         vm.expectRevert("ERC721: invalid token ID");
         stp.ownerOf(tokenId);
     }
@@ -105,7 +105,7 @@ contract SubscriptionTokenV1Test is BaseTest {
         stp.mint{value: 1e18}(1e18);
         vm.warp(block.timestamp + 6e17);
         assertEq(stp.balanceOf(alice), 0);
-        (uint256 tokenId,,) = stp.subscriptionOf(alice);
+        (uint256 tokenId,,,) = stp.subscriptionOf(alice);
         assertEq(stp.ownerOf(tokenId), alice);
     }
 
@@ -146,7 +146,7 @@ contract SubscriptionTokenV1Test is BaseTest {
 
     function testRefund() public {
         mint(alice, 1e18);
-        (uint256 tokenId,,) = stp.subscriptionOf(alice);
+        (uint256 tokenId,,,) = stp.subscriptionOf(alice);
         vm.startPrank(creator);
         vm.expectEmit(true, true, false, true, address(stp));
         emit Refund(alice, tokenId, 1e18, 1e18 / 2);
@@ -242,7 +242,7 @@ contract SubscriptionTokenV1Test is BaseTest {
         stp.mint(1e18);
         assertEq(token().balanceOf(address(stp)), 1e18);
         assertEq(stp.balanceOf(alice), 5e17);
-        (uint256 tokenId,,) = stp.subscriptionOf(alice);
+        (uint256 tokenId,,,) = stp.subscriptionOf(alice);
         assertEq(stp.ownerOf(tokenId), alice);
     }
 
@@ -310,7 +310,7 @@ contract SubscriptionTokenV1Test is BaseTest {
 
     function testTransfer() public {
         mint(alice, 1e18);
-        (uint256 tokenId,,) = stp.subscriptionOf(alice);
+        (uint256 tokenId,,,) = stp.subscriptionOf(alice);
         vm.startPrank(alice);
         stp.approve(bob, tokenId);
         vm.expectEmit(true, true, false, true, address(stp));
@@ -323,7 +323,7 @@ contract SubscriptionTokenV1Test is BaseTest {
     function testTransferToExistingHolder() public {
         mint(alice, 1e18);
         mint(bob, 1e18);
-        (uint256 tokenId,,) = stp.subscriptionOf(alice);
+        (uint256 tokenId,,,) = stp.subscriptionOf(alice);
         vm.startPrank(alice);
         stp.approve(bob, tokenId);
         vm.expectRevert("Cannot transfer to existing subscribers");
