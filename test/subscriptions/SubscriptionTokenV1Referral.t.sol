@@ -13,7 +13,7 @@ contract SubscriptionTokenV1ReferralTest is BaseTest {
         deal(bob, 1e19);
         deal(creator, 1e19);
         deal(fees, 1e19);
-        stp = createETHSub(1, 0);
+        stp = createETHSub(1, 0, 0);
     }
 
     function testCreate() public prank(creator) {

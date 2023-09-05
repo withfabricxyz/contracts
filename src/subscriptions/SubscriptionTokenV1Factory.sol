@@ -60,19 +60,19 @@ contract SubscriptionTokenV1Factory is Ownable {
         _feeDeployMin = 0;
     }
 
-    function deploySubscription(
-        string memory name,
-        string memory symbol,
-        string memory contractURI,
-        string memory tokenURI,
-        uint256 tokensPerSecond,
-        uint256 minimumPurchaseSeconds,
-        address erc20TokenAddr
-    ) external payable returns (address) {
-        return deploySubscription(
-            name, symbol, contractURI, tokenURI, tokensPerSecond, minimumPurchaseSeconds, erc20TokenAddr, 0
-        );
-    }
+    // function deploySubscription(
+    //     string memory name,
+    //     string memory symbol,
+    //     string memory contractURI,
+    //     string memory tokenURI,
+    //     uint256 tokensPerSecond,
+    //     uint256 minimumPurchaseSeconds,
+    //     address erc20TokenAddr
+    // ) external payable returns (address) {
+    //     return deploySubscription(
+    //         name, symbol, contractURI, tokenURI, tokensPerSecond, minimumPurchaseSeconds, erc20TokenAddr, 0
+    //     );
+    // }
 
     function deploySubscription(
         string memory name,
@@ -92,18 +92,20 @@ contract SubscriptionTokenV1Factory is Ownable {
 
         address deployment = Clones.clone(_implementation);
         SubscriptionTokenV1(payable(deployment)).initialize(
-            name,
-            symbol,
-            contractURI,
-            tokenURI,
-            msg.sender,
-            tokensPerSecond,
-            minimumPurchaseSeconds,
-            fees.basisPoints,
-            fees.collector,
-            erc20TokenAddr
+            SubLib.InitParams(
+                name,
+                symbol,
+                contractURI,
+                tokenURI,
+                msg.sender,
+                tokensPerSecond,
+                minimumPurchaseSeconds,
+                0, // todo
+                fees.basisPoints,
+                fees.collector,
+                erc20TokenAddr
+            )
         );
-
         emit Deployment(deployment, feeConfigId);
 
         return deployment;

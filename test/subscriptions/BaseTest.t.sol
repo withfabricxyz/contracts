@@ -50,7 +50,7 @@ abstract contract BaseTest is Test {
     }
 
     modifier withFees() {
-        stp = createETHSub(1, 500);
+        stp = createETHSub(1, 500, 0);
         _;
     }
 
@@ -64,6 +64,7 @@ abstract contract BaseTest is Test {
     address internal alice = 0xb4c79DAB8f259c7Aee6E5b2aa729821864227E81;
     address internal bob = 0xB4C79DAB8f259C7aEE6E5B2aa729821864227E8a;
     address internal charlie = 0xb4C79Dab8F259C7AEe6e5b2Aa729821864227e7A;
+    address internal doug = 0xB4c79dAb8f259c7aee6e5b2aa729821864227E7b;
 
     SubscriptionTokenV1 internal stp;
 
@@ -110,17 +111,31 @@ abstract contract BaseTest is Test {
 
         SubscriptionTokenV1 m = new SubscriptionTokenV1();
         vm.store(address(m), bytes32(uint256(0)), bytes32(0));
-        m.initialize("Meow Sub", "MEOW", "curi", "turi", creator, 2, 2, 0, address(0), address(_token));
+        m.initialize(
+            SubLib.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 2, 0, 0, address(0), address(_token))
+        );
         return m;
     }
 
-    function createETHSub(uint256 minPurchase, uint16 feeBps) public virtual returns (SubscriptionTokenV1) {
+    function createETHSub(uint256 minPurchase, uint16 feeBps, uint16 rewardBps)
+        public
+        virtual
+        returns (SubscriptionTokenV1)
+    {
         SubscriptionTokenV1 m = new SubscriptionTokenV1();
         vm.store(address(m), bytes32(uint256(0)), bytes32(0));
         if (feeBps > 0) {
-            m.initialize("Meow Sub", "MEOW", "curi", "turi", creator, 2, minPurchase, feeBps, fees, address(0));
+            m.initialize(
+                SubLib.InitParams(
+                    "Meow Sub", "MEOW", "curi", "turi", creator, 2, minPurchase, rewardBps, feeBps, fees, address(0)
+                )
+            );
         } else {
-            m.initialize("Meow Sub", "MEOW", "curi", "turi", creator, 2, minPurchase, 0, address(0), address(0));
+            m.initialize(
+                SubLib.InitParams(
+                    "Meow Sub", "MEOW", "curi", "turi", creator, 2, minPurchase, rewardBps, 0, address(0), address(0)
+                )
+            );
         }
         return m;
     }
