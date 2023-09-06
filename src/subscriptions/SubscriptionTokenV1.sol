@@ -712,7 +712,7 @@ contract SubscriptionTokenV1 is
 
     /**
      * @notice The current reward multiplier used to calculate reward points on mint. This is halved every _minPurchaseSeconds and eventually goes to 0.
-     * @return the current multiplier
+     * @return multiplier the current value
      */
     function rewardMultiplier() public view returns (uint256 multiplier) {
         uint256 halvings = (block.timestamp - _deployBlockTime) / _minPurchaseSeconds;
