@@ -54,6 +54,11 @@ contract SubscriptionTokenV1Test is BaseTest {
         stp.initialize(
             SubLib.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 0, 0, 0, address(0), address(0))
         );
+
+        vm.expectRevert("Reward bps too high");
+        stp.initialize(
+            SubLib.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 4, 11_000, 0, address(0), address(0))
+        );
     }
 
     function testMint() public prank(alice) {
@@ -70,6 +75,17 @@ contract SubscriptionTokenV1Test is BaseTest {
     function testMintInvalid() public prank(alice) {
         vm.expectRevert("Purchase amount must match value sent");
         stp.mint{value: 1e17}(1e18);
+    }
+
+    function testMintViaFallback() public prank(alice) {
+        (bool sent,) = address(stp).call{value: 1e18}("");
+        assertTrue(sent);
+    }
+
+    function testMintViaFallbackERC20() public erc20 prank(alice) {
+        vm.expectRevert("Native tokens not accepted for ERC20 subscriptions");
+        (, bytes memory data) = address(stp).call{value: 1e18}("");
+        assertTrue(data.length > 0);
     }
 
     function testMintFor() public prank(alice) {
@@ -185,6 +201,14 @@ contract SubscriptionTokenV1Test is BaseTest {
         stp.refund(0, list(bob));
         vm.stopPrank();
         assertEq(balance, bob.balance);
+    }
+
+    function testInvalidRefund() public {
+        mint(alice, 1e18);
+        vm.startPrank(creator);
+        vm.expectRevert("Unexpected value transfer");
+        stp.refund{value: 1}(0, list(alice));
+        vm.stopPrank();
     }
 
     ///
@@ -378,17 +402,57 @@ contract SubscriptionTokenV1Test is BaseTest {
     }
 
     /// Reconciation
-    function testReconcileEth() public {
+    function testReconcileEth() public prank(creator) {
         vm.expectRevert("Only for ERC20 tokens");
         stp.reconcileERC20Balance();
     }
 
-    function testReconcile() public erc20 {
+    function testReconcile() public erc20 prank(creator) {
         vm.expectRevert("Tokens already reconciled");
         stp.reconcileERC20Balance();
 
         token().transfer(address(stp), 1e17);
         stp.reconcileERC20Balance();
         assertEq(stp.creatorBalance(), 1e17);
+    }
+
+    function testRecoverERC20Self() public erc20 prank(creator) {
+        address addr = stp.erc20Address();
+        vm.expectRevert("Cannot recover subscription token");
+        stp.recoverERC20(addr, alice, 1e17);
+    }
+
+    function testRecoverERC20() public prank(creator) {
+        ERC20Token token = new ERC20Token(
+        "FIAT",
+        "FIAT",
+        1e21
+      );
+        token.transfer(address(stp), 1e17);
+        stp.recoverERC20(address(token), alice, 1e17);
+        assertEq(token.balanceOf(alice), 1e17);
+    }
+
+    /// Supply Cap
+    function testSupplyCap() public {
+        vm.startPrank(creator);
+        stp.setSupplyCap(1);
+        vm.stopPrank();
+        mint(alice, 1e18);
+
+        vm.startPrank(bob);
+        vm.expectRevert("Supply cap reached");
+        stp.mint{value: 1e18}(1e18);
+        vm.stopPrank();
+
+        vm.startPrank(creator);
+        stp.setSupplyCap(0);
+        vm.stopPrank();
+
+        mint(bob, 1e18);
+        vm.startPrank(creator);
+        vm.expectRevert("Supply cap must be >= current count or 0");
+        stp.setSupplyCap(1);
+        vm.stopPrank();
     }
 }

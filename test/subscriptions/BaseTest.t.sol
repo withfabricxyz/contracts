@@ -35,13 +35,15 @@ abstract contract BaseTest is Test {
     event FeeCollectorChange(address indexed from, address indexed to);
 
     /// @dev Emitted when a reward is paid out
-    event Reward(uint256 indexed tokenId, address indexed referrer, uint256 indexed referralId, uint256 rewardAmount);
+    event ReferralPayout(
+        uint256 indexed tokenId, address indexed referrer, uint256 indexed referralId, uint256 rewardAmount
+    );
 
     /// @dev Emitted when a new referral code is created
-    event RewardCreated(uint256 id, uint16 rewardBpsMin, uint16 rewardBpsMax);
+    event ReferralCreated(uint256 id, uint16 rewardBpsMin, uint16 rewardBpsMax);
 
     /// @dev Emitted when a referral code is deleted
-    event RewardDestroyed(uint256 id);
+    event ReferralDestroyed(uint256 id);
 
     modifier prank(address user) {
         vm.startPrank(user);

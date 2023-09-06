@@ -15,8 +15,10 @@ import "./SubscriptionTokenV1.sol";
  *
  */
 contract SubscriptionTokenV1Factory is Ownable {
+    /// @dev The maximum fee that can be charged for a subscription contract
     uint16 private constant _MAX_FEE_BIPS = 1250;
 
+    /// @dev Guard to ensure the deploy fee is met
     modifier feeRequired() {
         require(msg.value >= _feeDeployMin, "Insufficient ETH to deploy");
         _;
@@ -60,20 +62,19 @@ contract SubscriptionTokenV1Factory is Ownable {
         _feeDeployMin = 0;
     }
 
-    // function deploySubscription(
-    //     string memory name,
-    //     string memory symbol,
-    //     string memory contractURI,
-    //     string memory tokenURI,
-    //     uint256 tokensPerSecond,
-    //     uint256 minimumPurchaseSeconds,
-    //     address erc20TokenAddr
-    // ) external payable returns (address) {
-    //     return deploySubscription(
-    //         name, symbol, contractURI, tokenURI, tokensPerSecond, minimumPurchaseSeconds, erc20TokenAddr, 0
-    //     );
-    // }
-
+    /**
+     * @notice Deploy a new Clone of a SubscriptionTokenV1 contract
+     *
+     * @param name the name of the collection
+     * @param symbol the symbol of the collection
+     * @param contractURI the metadata URI for the collection
+     * @param tokenURI the metadata URI for the tokens
+     * @param tokensPerSecond the number of base tokens required for a single second of time
+     * @param minimumPurchaseSeconds the minimum number of seconds an account can purchase
+     * @param rewardBps the basis points for reward allocations
+     * @param erc20TokenAddr the address of the ERC20 token used for purchases, or the 0x0 for native
+     * @param feeConfigId the fee configuration id to use for this deployment (if the id is invalid, the default fee is used)
+     */
     function deploySubscription(
         string memory name,
         string memory symbol,
@@ -81,6 +82,7 @@ contract SubscriptionTokenV1Factory is Ownable {
         string memory tokenURI,
         uint256 tokensPerSecond,
         uint256 minimumPurchaseSeconds,
+        uint16 rewardBps,
         address erc20TokenAddr,
         uint256 feeConfigId
     ) public payable feeRequired returns (address) {
@@ -100,7 +102,7 @@ contract SubscriptionTokenV1Factory is Ownable {
                 msg.sender,
                 tokensPerSecond,
                 minimumPurchaseSeconds,
-                0, // todo
+                rewardBps,
                 fees.basisPoints,
                 fees.collector,
                 erc20TokenAddr

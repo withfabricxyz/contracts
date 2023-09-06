@@ -15,27 +15,15 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         deal(doug, 1e19);
         deal(creator, 1e19);
         deal(fees, 1e19);
-        stp = createETHSub(1, 0, 500);
+        stp = createETHSub(2592000, 0, 500);
     }
 
     function testDecay() public {
-        assertEq(stp.rewardMultiplier(), 64);
-        vm.warp(31 days);
-        assertEq(stp.rewardMultiplier(), 32);
-        vm.warp(61 days);
-        assertEq(stp.rewardMultiplier(), 16);
-        vm.warp(91 days);
-        assertEq(stp.rewardMultiplier(), 8);
-        vm.warp(121 days);
-        assertEq(stp.rewardMultiplier(), 4);
-        vm.warp(151 days);
-        assertEq(stp.rewardMultiplier(), 2);
-        vm.warp(181 days);
-        assertEq(stp.rewardMultiplier(), 1);
-        vm.warp(211 days);
-        assertEq(stp.rewardMultiplier(), 1);
-        vm.warp(365 * 100 days);
-        assertEq(stp.rewardMultiplier(), 1);
+        uint256 halvings = 6;
+        for (uint256 i = 0; i < halvings; i++) {
+            vm.warp((stp.minPurchaseSeconds() * i) + 1);
+            assertEq(stp.rewardMultiplier(), (2 ** (halvings - i)));
+        }
     }
 
     function testRewardPointAllocation() public {

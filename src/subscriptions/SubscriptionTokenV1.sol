@@ -12,16 +12,15 @@ import "@openzeppelin-upgradeable/contracts/security/ReentrancyGuardUpgradeable.
 import "./SubLib.sol";
 
 /**
- * @title Subscription Token
+ * @title Subscription Token Protocol Version 1
  * @author Fabric Inc.
  * @notice An NFT contract which allows users to mint time and access token gated content while time remains.
  * @dev The balanceOf function returns the number of seconds remaining in the subscription. Token gated systems leverage
  *      the balanceOf function to determine if a user has the token, and if no time remains, the balance is 0. NFT holders
- *      can mint additional time at any point. The creator/owner of the contract can withdraw the funds at any point. There are
- *      additional functionalities for granting time, refunding accounts, fees, etc. This contract is designed to be used with
+ *      can mint additional time. The creator/owner of the contract can withdraw the funds at any point. There are
+ *      additional functionalities for granting time, refunding accounts, fees, rewards, etc. This contract is designed to be used with
  *      Clones, but is not designed to be upgradeable. Added functionality will come with new versions.
  */
-
 contract SubscriptionTokenV1 is
     ERC721Upgradeable,
     OwnableUpgradeable,
@@ -31,14 +30,11 @@ contract SubscriptionTokenV1 is
     using SafeERC20 for IERC20;
     using StringsUpgradeable for uint256;
 
-    /// @dev The number of reward halvings
+    /// @dev The number of reward halvings. This is used to calculate the reward multiplier for early supporters, if the creator chooses to reward them.
     uint256 private constant _NUM_REWARD_HALVINGS = 6;
 
     /// @dev The starting reward multiplier for subscriber rewards
     uint256 private constant _STARTING_REWARD_MULTIPLIER = 2 ** _NUM_REWARD_HALVINGS;
-
-    /// @dev The number of seconds until the reward multipler is halved
-    uint256 private constant _REWARD_MULTIPLIER_HALVING_SECONDS = 30 days;
 
     /// @dev Maximum fee basis points (12.5%)
     uint16 private constant _MAX_FEE_BIPS = 1250;
@@ -46,7 +42,7 @@ contract SubscriptionTokenV1 is
     /// @dev Maximum basis points (100%)
     uint16 private constant _MAX_BIPS = 10000;
 
-    /// @dev guard to ensure the purchase amount is valid
+    /// @dev Guard to ensure the purchase amount is valid
     modifier validAmount(uint256 amount) {
         require(amount >= _minimumPurchase, "Amount must be >= minimum purchase");
         _;
@@ -55,7 +51,10 @@ contract SubscriptionTokenV1 is
     /// @dev Emitted when the owner withdraws available funds
     event Withdraw(address indexed account, uint256 tokensTransferred);
 
-    /// @dev Emitted when a subscriber purchases time
+    /// @dev Emitted when a subscriber withdraws their rewards
+    event RewardWithdraw(address indexed account, uint256 tokensTransferred);
+
+    /// @dev Emitted when time is purchased (new nft or renewed)
     event Purchase(
         address indexed account,
         uint256 indexed tokenId,
@@ -76,28 +75,43 @@ contract SubscriptionTokenV1 is
     /// @dev Emitted when the fee collector is updated
     event FeeCollectorChange(address indexed from, address indexed to);
 
-    /// @dev Emitted when a reward is paid out
-    event Reward(uint256 indexed tokenId, address indexed referrer, uint256 indexed referralId, uint256 rewardAmount);
+    /// @dev Emitted when a referral fee is paid out
+    event ReferralPayout(
+        uint256 indexed tokenId, address indexed referrer, uint256 indexed referralId, uint256 rewardAmount
+    );
 
     /// @dev Emitted when a new referral code is created
-    event RewardCreated(uint256 id, uint16 rewardBpsMin, uint16 rewardBpsMax);
+    event ReferralCreated(uint256 id, uint16 rewardBpsMin, uint16 rewardBpsMax);
 
     /// @dev Emitted when a referral code is deleted
-    event RewardDestroyed(uint256 id);
+    event ReferralDestroyed(uint256 id);
+
+    /// @dev Emitted when the supply cap is updated
+    event SupplyCapChange(uint256 supplyCap);
 
     /// @dev The subscription struct which holds the state of a subscription for an account
     struct Subscription {
+        /// @dev The tokenId for the subscription
         uint256 tokenId;
+        /// @dev The number of seconds purchased
         uint256 secondsPurchased;
+        /// @dev The number of seconds granted by the creator
         uint256 secondsGranted;
+        /// @dev A time offset used to adjust expiration for grants
         uint256 grantOffset;
+        /// @dev A time offset used to adjust expiration for purchases
         uint256 purchaseOffset;
+        /// @dev The number of reward points earned
         uint256 rewardPoints;
+        /// @dev The number of rewards withdrawn
         uint256 rewardsWithdrawn;
     }
 
+    /// @dev The referral code struct which holds the state of a referral code
     struct ReferralCode {
+        /// @dev The minimum reward basis points (can be equal to max for a fixed reward)
         uint16 rewardBpsMin;
+        /// @dev The maximum reward basis points
         uint16 rewardBpsMax;
     }
 
@@ -110,40 +124,43 @@ contract SubscriptionTokenV1 is
     /// @dev The cost of one second in denominated token (wei or other base unit)
     uint256 private _tokensPerSecond;
 
+    /// @dev Minimum number of seconds to purchase. Also, this is the number of seconds until the reward multiplier is halved.
+    uint256 private _minPurchaseSeconds;
+
     /// @dev The minimum number of tokens accepted for a time purchase
     uint256 private _minimumPurchase;
 
     /// @dev The token contract address, or 0x0 for native tokens
     IERC20 private _token;
 
-    /// @dev The total number of tokens transferred in
+    /// @dev The total number of tokens transferred in (accounting)
     uint256 private _tokensIn;
 
-    /// @dev The total number of tokens transferred out
+    /// @dev The total number of tokens transferred out (accounting)
     uint256 private _tokensOut;
 
-    /// @dev The token counter for mint id generation
+    /// @dev The token counter for mint id generation and enforcing supply caps
     uint256 private _tokenCounter;
 
-    /// @dev The total number of tokens allocated for the fee collector
+    /// @dev The total number of tokens allocated for the fee collector (accounting)
     uint256 private _feeBalance;
 
     /// @dev The fee basis points (10000 = 100%, max = _MAX_FEE_BIPS)
     uint16 private _feeBps;
 
-    /// @dev The fee collector address
+    /// @dev The fee collector address (for withdraws or sponsored transfers)
     address private _feeCollector;
 
     /// @dev Flag which determines if the contract is erc20 denominated
     bool private _erc20;
 
-    /// @dev The block timestamp of the contract deployment
+    /// @dev The block timestamp of the contract deployment (used for reward halvings)
     uint256 private _deployBlockTime;
 
-    /// @dev The reward pool size
+    /// @dev The reward pool size (used to calculate reward withdraws accurately)
     uint256 private _totalRewardPoints;
 
-    /// @dev The reward pool balance
+    /// @dev The reward pool balance (accounting)
     uint256 private _rewardPoolBalance;
 
     /// @dev The reward pool total (used to calculate reward withdraws accurately)
@@ -152,14 +169,18 @@ contract SubscriptionTokenV1 is
     /// @dev The basis points for reward allocations
     uint16 private _rewardBps;
 
+    /// @dev The maximum number of tokens which can be minted (adjustable over time, but will not allow setting below current count)
+    uint256 private _supplyCap;
+
     /// @dev The subscription state for each account
     mapping(address => Subscription) private _subscriptions;
 
-    /// @dev The collection or referral codes for referral rewards
+    /// @dev The collection of referral codes for referral rewards
     mapping(uint256 => ReferralCode) private _referralCodes;
 
     ////////////////////////////////////
 
+    /// @dev Disable initializers on the logic contract
     constructor() {
         _disableInitializers();
     }
@@ -169,27 +190,16 @@ contract SubscriptionTokenV1 is
         mintFor(msg.sender, msg.value);
     }
 
-    // /**
-    //  * @dev Initialize acts as the constructor, as this contract is intended to work with proxy contracts.
-    //  *
-    //  * @param name the name of the collection
-    //  * @param symbol the symbol of the collection
-    //  * @param contractUri the metadata URI for the collection
-    //  * @param tokenUri the metadata URI for the tokens
-    //  * @param owner the owner address, for owner only functionality
-    //  * @param tokensPerSecond the number of base tokens required for a single second of time
-    //  * @param minimumPurchaseSeconds the minimum number of seconds an account can purchase
-    //  * @param rewardBps the basis points for reward allocations
-    //  * @param feeBps the fee in basis points, allocated to the fee collector on withdrawal
-    //  * @param feeRecipient the fee collector address
-    //  * @param erc20TokenAddr the address of the ERC20 token used for purchases, or the 0x0 for native
-    //  */
+    /**
+     * @dev Initialize acts as the constructor, as this contract is intended to work with proxy contracts.
+     * @param params the init params (See SubLib.InitParams)
+     */
     function initialize(SubLib.InitParams memory params) public initializer {
         require(params.owner != address(0), "Owner address cannot be 0x0");
         require(params.tokensPerSecond > 0, "Tokens per second must be > 0");
         require(params.minimumPurchaseSeconds > 0, "Min purchase seconds must be > 0");
         require(params.feeBps <= _MAX_FEE_BIPS, "Fee bps too high");
-        require(params.rewardBps <= _MAX_FEE_BIPS, "Reward bps too high");
+        require(params.rewardBps <= _MAX_BIPS, "Reward bps too high");
         if (params.feeRecipient != address(0)) {
             require(params.feeBps > 0, "Fees required when fee recipient is present");
         }
@@ -202,6 +212,7 @@ contract SubscriptionTokenV1 is
         _tokenURI = params.tokenUri;
         _tokensPerSecond = params.tokensPerSecond;
         _minimumPurchase = params.minimumPurchaseSeconds * params.tokensPerSecond;
+        _minPurchaseSeconds = params.minimumPurchaseSeconds;
         _rewardBps = params.rewardBps;
         _feeBps = params.feeBps;
         _feeCollector = params.feeRecipient;
@@ -225,22 +236,25 @@ contract SubscriptionTokenV1 is
     /**
      * @notice Mint or renew a subscription for sender, with referral rewards for a referrer
      * @param numTokens the amount of ERC20 tokens or native tokens to transfer
-     * @param referralCode the referral code to use for rewards
+     * @param referralCode the referral code to use
      * @param referrer the referrer address and reward recipient
      */
     function mintWithReferral(uint256 numTokens, uint256 referralCode, address referrer) external payable {
         mintWithReferralFor(msg.sender, numTokens, referralCode, referrer);
     }
 
+    /**
+     * @notice Withdraw available rewards
+     */
     function withdrawRewards() external {
-        Subscription memory sub = _fetchSubscription(msg.sender);
-        // TODO: Reduce
+        Subscription memory sub = _subscriptions[msg.sender];
         uint256 rewardAmount = _rewardBalance(sub);
         require(rewardAmount > 0, "No rewards to withdraw");
         sub.rewardsWithdrawn += rewardAmount;
         _subscriptions[msg.sender] = sub;
         _rewardPoolBalance -= rewardAmount;
         _transferOut(msg.sender, rewardAmount);
+        emit RewardWithdraw(msg.sender, rewardAmount);
     }
 
     /////////////////////////
@@ -259,13 +273,11 @@ contract SubscriptionTokenV1 is
      */
     function withdrawAndTransferFees() external {
         withdrawTo(msg.sender);
-        if (_feeBalance > 0) {
-            _transferFees();
-        }
+        _transferFees();
     }
 
     /**
-     * @notice Withdraw available funds as the owner to a different account
+     * @notice Withdraw available funds as the owner to a specific account
      * @param account the account to transfer funds to
      */
     function withdrawTo(address account) public onlyOwner {
@@ -293,9 +305,10 @@ contract SubscriptionTokenV1 is
     }
 
     /**
-     * @notice Refund all remaining purchased time for accounts
+     * @notice Determine the total cost for refunding the given accounts
+     * @dev The value will change from block to block, so this is only an estimate
      * @param accounts the list of accounts to refund
-     * @return the total number of refundable tokens
+     * @return the total number of tokens
      */
     function refundableTokenBalanceOfAll(address[] memory accounts) public view returns (uint256) {
         uint256 amount;
@@ -306,7 +319,7 @@ contract SubscriptionTokenV1 is
     }
 
     /**
-     * @notice Can the refund be processed for the given accounts with the current balance
+     * @notice Determines if a refund can be processed for the given accounts with the current balance
      * @param accounts the list of accounts to refund
      * @return true if the refund can be processed
      */
@@ -336,7 +349,7 @@ contract SubscriptionTokenV1 is
     }
 
     /**
-     * @notice Pause minting to allow for upgrades or shutting down the subscription
+     * @notice Pause minting to allow for migrations or other actions
      */
     function pause() external onlyOwner {
         _pause();
@@ -349,12 +362,22 @@ contract SubscriptionTokenV1 is
         _unpause();
     }
 
+    /**
+     * @notice Update the maximum number of mintable tokens (subscriptions)
+     * @param supplyCap the new supply cap (must be greater than token count or 0 for unlimited)
+     */
+    function setSupplyCap(uint256 supplyCap) external onlyOwner {
+        require(supplyCap == 0 || supplyCap >= _tokenCounter, "Supply cap must be >= current count or 0");
+        _supplyCap = supplyCap;
+        emit SupplyCapChange(supplyCap);
+    }
+
     /////////////////////////
     // Sponsored Calls
     /////////////////////////
 
     /**
-     * @notice Mint or renew a subscription for a specific account
+     * @notice Mint or renew a subscription for a specific account. Intended for automated renewals.
      * @param account the account to mint or renew time for
      * @param numTokens the amount of ERC20 tokens or native tokens to transfer
      */
@@ -364,7 +387,7 @@ contract SubscriptionTokenV1 is
     }
 
     /**
-     * @notice Mint or renew a subscription for a specific account, with referral rewards for a referrer
+     * @notice Mint or renew a subscription for a specific account, with referral details
      * @param account the account to mint or renew time for
      * @param numTokens the amount of ERC20 tokens or native tokens to transfer
      * @param referralCode the referral code to use for rewards
@@ -376,16 +399,14 @@ contract SubscriptionTokenV1 is
         whenNotPaused
         validAmount(numTokens)
     {
-        // Transfer all here
         uint256 finalAmount = _transferIn(msg.sender, numTokens);
-
         uint256 tokenId = _purchaseTime(account, finalAmount);
 
         // Calculate rewards and transfer rewards out
-        uint256 rewardAmount = _referralAmount(finalAmount, referralCode);
-        if (rewardAmount > 0) {
-            _transferOut(referrer, rewardAmount);
-            emit Reward(tokenId, referrer, referralCode, rewardAmount);
+        uint256 payout = _referralAmount(finalAmount, referralCode);
+        if (payout > 0) {
+            _transferOut(referrer, payout);
+            emit ReferralPayout(tokenId, referrer, referralCode, payout);
         }
     }
 
@@ -403,18 +424,6 @@ contract SubscriptionTokenV1 is
      */
     function transferAllBalances() external {
         _transferAllBalances(owner());
-    }
-
-    /**
-     * @notice Reconcile the ERC20 balance of the contract with the internal state
-     * @dev The prevents lost funds if ERC20 tokens are transferred directly to the contract account
-     */
-    function reconcileERC20Balance() external {
-        require(_erc20, "Only for ERC20 tokens");
-        uint256 balance = _token.balanceOf(address(this));
-        uint256 expectedBalance = _tokensIn - _tokensOut;
-        require(balance > expectedBalance, "Tokens already reconciled");
-        _tokensIn += balance - expectedBalance;
     }
 
     /////////////////////////
@@ -439,7 +448,7 @@ contract SubscriptionTokenV1 is
     }
 
     /**
-     * @notice Update the fee collector address. Can be set to 0x0 to disable fees.
+     * @notice Update the fee collector address. Can be set to 0x0 to disable fees permanently.
      * @param newCollector the new fee collector address
      */
     function updateFeeRecipient(address newCollector) external {
@@ -470,7 +479,7 @@ contract SubscriptionTokenV1 is
         ReferralCode memory existing = _referralCodes[code];
         require(existing.rewardBpsMin == existing.rewardBpsMax && existing.rewardBpsMin == 0, "Referral code exists");
         _referralCodes[code] = ReferralCode(minBps, maxBps);
-        emit RewardCreated(code, minBps, maxBps);
+        emit ReferralCreated(code, minBps, maxBps);
     }
 
     /**
@@ -479,7 +488,7 @@ contract SubscriptionTokenV1 is
      */
     function deleteReferralCode(uint256 code) external onlyOwner {
         delete _referralCodes[code];
-        emit RewardDestroyed(code);
+        emit ReferralDestroyed(code);
     }
 
     /**
@@ -516,10 +525,11 @@ contract SubscriptionTokenV1 is
         return sub.tokenId;
     }
 
-    /// @dev Get or create a new subscription (and mint)
+    /// @dev Get or create/mint a new subscription
     function _fetchSubscription(address account) internal returns (Subscription memory) {
         Subscription memory sub = _subscriptions[account];
         if (sub.tokenId == 0) {
+            require(_supplyCap == 0 || _tokenCounter < _supplyCap, "Supply cap reached");
             _tokenCounter += 1;
             sub = Subscription(_tokenCounter, 0, 0, block.timestamp, block.timestamp, 0, 0);
             _safeMint(account, sub.tokenId);
@@ -527,14 +537,21 @@ contract SubscriptionTokenV1 is
         return sub;
     }
 
-    /// @dev Allocate fees to the fee collector for a given amount of tokens
+    /// @dev Allocate tokens to the fee collector
     function _allocateFees(uint256 amount) internal returns (uint256) {
+        if (_feeBps == 0) {
+            return amount;
+        }
         uint256 fee = (amount * _feeBps) / _MAX_BIPS;
         _feeBalance += fee;
         return amount - fee;
     }
 
+    /// @dev Allocate tokens to the reward pool
     function _allocateRewards(uint256 amount) internal returns (uint256) {
+        if (_rewardBps == 0) {
+            return amount;
+        }
         uint256 rewards = (amount * _rewardBps) / _MAX_BIPS;
         _rewardPoolBalance += rewards;
         _rewardPoolTotal += rewards;
@@ -543,20 +560,20 @@ contract SubscriptionTokenV1 is
 
     /// @dev Transfer tokens into the contract, either native or ERC20
     function _transferIn(address from, uint256 amount) internal nonReentrant returns (uint256) {
-        require(amount > 0, "Transfer amount must be > 0");
-        uint256 finalAmount = amount;
-        if (_erc20) {
-            // Handle tokens which take fees
-            require(msg.value == 0, "Native tokens not accepted for ERC20 subscriptions");
-            uint256 preBalance = _token.balanceOf(from);
-            uint256 allowance = _token.allowance(from, address(this));
-            require(preBalance >= amount && allowance >= amount, "Insufficient Balance or Allowance");
-            _token.safeTransferFrom(from, address(this), amount);
-            uint256 postBalance = _token.balanceOf(from);
-            finalAmount = preBalance - postBalance;
-        } else {
+        if (!_erc20) {
             require(msg.value == amount, "Purchase amount must match value sent");
+            _tokensIn += amount;
+            return amount;
         }
+
+        // Note: We support tokens which take fees, but do not support rebasing tokens
+        require(msg.value == 0, "Native tokens not accepted for ERC20 subscriptions");
+        uint256 preBalance = _token.balanceOf(from);
+        uint256 allowance = _token.allowance(from, address(this));
+        require(preBalance >= amount && allowance >= amount, "Insufficient Balance or Allowance");
+        _token.safeTransferFrom(from, address(this), amount);
+        uint256 postBalance = _token.balanceOf(from);
+        uint256 finalAmount = preBalance - postBalance;
         _tokensIn += finalAmount;
         return finalAmount;
     }
@@ -571,7 +588,6 @@ contract SubscriptionTokenV1 is
 
     /// @dev Transfer tokens out of the contract, either native or ERC20
     function _transferOut(address to, uint256 amount) internal nonReentrant {
-        require(amount > 0, "Transfer amount must be > 0");
         _tokensOut += amount;
         if (_erc20) {
             _token.safeTransfer(to, amount);
@@ -583,6 +599,9 @@ contract SubscriptionTokenV1 is
 
     /// @dev Transfer fees to the fee collector
     function _transferFees() internal {
+        if (_feeBalance == 0) {
+            return;
+        }
         uint256 balance = _feeBalance;
         _feeBalance = 0;
         _transferOut(_feeCollector, balance);
@@ -597,9 +616,7 @@ contract SubscriptionTokenV1 is
         }
 
         // Transfer out all remaining funds
-        if (_feeBalance > 0) {
-            _transferFees();
-        }
+        _transferFees();
     }
 
     /// @dev Grant time to a given account
@@ -659,20 +676,20 @@ contract SubscriptionTokenV1 is
             return 0;
         }
 
-        uint256 rewardBps;
+        uint256 referralBps;
         uint256 delta = code.rewardBpsMax - code.rewardBpsMin;
         if (delta == 0) {
-            rewardBps = code.rewardBpsMin;
+            referralBps = code.rewardBpsMin;
         } else {
             // Psuedo random value between min and max (variable reward). This is weak, but acceptable given the nature
             // of these rewards. The amount of tokens transferred will never be less than the minimum reward. If a miner
             // is the referrer, then rewards could be biased towards the max reward. Creators should opt to use a fixed
             // reward if they are concerned about this.
-            rewardBps = code.rewardBpsMin
+            referralBps = code.rewardBpsMin
                 + uint256(keccak256(abi.encode(block.difficulty, msg.sender, tokenAmount, _tokensOut))) % delta;
         }
 
-        return (tokenAmount * rewardBps) / _MAX_BIPS;
+        return (tokenAmount * referralBps) / _MAX_BIPS;
     }
 
     /// @dev The timestamp when the subscription expires
@@ -680,9 +697,8 @@ contract SubscriptionTokenV1 is
         return block.timestamp + _purchaseTimeRemaining(sub) + _grantTimeRemaining(sub);
     }
 
+    /// @dev The reward balance for a given subscription
     function _rewardBalance(Subscription memory sub) internal view returns (uint256 balance) {
-        // we need a total reward points to calculate the share
-        // we need an available reward pool balance to calculate the share
         uint256 userShare = _rewardPoolTotal * sub.rewardPoints / _totalRewardPoints;
         if (userShare <= sub.rewardsWithdrawn) {
             return 0;
@@ -694,10 +710,14 @@ contract SubscriptionTokenV1 is
     // Informational
     ////////////////////////
 
+    /**
+     * @notice The current reward multiplier used to calculate reward points on mint. This is halved every _minPurchaseSeconds and eventually goes to 0.
+     * @return the current multiplier
+     */
     function rewardMultiplier() public view returns (uint256 multiplier) {
-        uint256 halvings = (block.timestamp - _deployBlockTime) / _REWARD_MULTIPLIER_HALVING_SECONDS;
-        if (halvings >= _NUM_REWARD_HALVINGS) {
-            return 1;
+        uint256 halvings = (block.timestamp - _deployBlockTime) / _minPurchaseSeconds;
+        if (halvings >= _NUM_REWARD_HALVINGS + 1) {
+            return 0;
         }
         return _STARTING_REWARD_MULTIPLIER / (2 ** halvings);
     }
@@ -749,10 +769,27 @@ contract SubscriptionTokenV1 is
         return (sub.tokenId, sub.secondsPurchased, sub.rewardPoints, expires);
     }
 
+    /**
+     * @notice The percentage (as basis points) of creator earnings which are rewarded to subscribers
+     * @return the reward basis points
+     */
+    function rewardBps() external view returns (uint256) {
+        return _rewardBps;
+    }
+
+    /**
+     * @notice The number of reward points allocated to all subscribers (used to calculate rewards)
+     * @return the total number of reward points
+     */
     function totalRewardPoints() external view returns (uint256) {
         return _totalRewardPoints;
     }
 
+    /**
+     * @notice The number of tokens available to withdraw from the reward pool, for a given account
+     * @param account the account to check
+     * @return the number of tokens available to withdraw
+     */
     function rewardBalanceOf(address account) external view returns (uint256) {
         Subscription memory sub = _subscriptions[account];
         return _rewardBalance(sub);
@@ -805,7 +842,7 @@ contract SubscriptionTokenV1 is
      * @return the minimum number of seconds required for a purchase
      */
     function minPurchaseSeconds() external view returns (uint256) {
-        return _minimumPurchase / _tokensPerSecond;
+        return _minPurchaseSeconds;
     }
 
     /**
@@ -869,5 +906,32 @@ contract SubscriptionTokenV1 is
         }
 
         delete _subscriptions[from];
+    }
+
+    //////////////////////
+    // Recovery Functions
+    //////////////////////
+
+    /**
+     * @notice Reconcile the ERC20 balance of the contract with the internal state
+     * @dev The prevents lost funds if ERC20 tokens are transferred to the contract directly
+     */
+    function reconcileERC20Balance() external onlyOwner {
+        require(_erc20, "Only for ERC20 tokens");
+        uint256 balance = _token.balanceOf(address(this));
+        uint256 expectedBalance = _tokensIn - _tokensOut;
+        require(balance > expectedBalance, "Tokens already reconciled");
+        _tokensIn += balance - expectedBalance;
+    }
+
+    /**
+     * @notice Recover ERC20 tokens which were accidentally sent to the contract
+     * @param tokenAddress the address of the token to recover
+     * @param recipientAddress the address to send the tokens to
+     * @param tokenAmount the amount of tokens to send
+     */
+    function recoverERC20(address tokenAddress, address recipientAddress, uint256 tokenAmount) external onlyOwner {
+        require(tokenAddress != erc20Address(), "Cannot recover subscription token");
+        IERC20(tokenAddress).safeTransfer(recipientAddress, tokenAmount);
     }
 }

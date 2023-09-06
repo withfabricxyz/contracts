@@ -38,13 +38,15 @@ contract SubscriptionTokenV1FactoryTest is BaseTest {
         vm.expectEmit(false, false, false, true, address(factory));
         emit Deployment(address(1), 0);
 
-        address deployment = factory.deploySubscription("test", "tst", "curi", "turi", 1e9, 2e9, address(0), 0);
+        address deployment = factory.deploySubscription("test", "tst", "curi", "turi", 1e9, 2e9, 50, address(0), 0);
 
         SubscriptionTokenV1 nft = SubscriptionTokenV1(payable(deployment));
         assertEq(nft.name(), "test");
         assertEq(nft.symbol(), "tst");
+        assertEq(nft.contractURI(), "curi");
         assertEq(nft.timeValue(1e9), 1);
         assertEq(nft.erc20Address(), address(0));
+        assertEq(nft.rewardBps(), 50);
     }
 
     function testDeploymentWithReferral() public {
@@ -52,7 +54,7 @@ contract SubscriptionTokenV1FactoryTest is BaseTest {
         vm.startPrank(alice);
         vm.expectEmit(false, false, false, true, address(factory));
         emit Deployment(address(1), 1);
-        address deployment = factory.deploySubscription("test", "tst", "curi", "turi", 1e9, 2e9, address(0), 1);
+        address deployment = factory.deploySubscription("test", "tst", "curi", "turi", 1e9, 2e9, 0, address(0), 1);
         SubscriptionTokenV1 nft = SubscriptionTokenV1(payable(deployment));
         (address recipient, uint16 bps) = nft.feeSchedule();
         assertEq(recipient, bob);
@@ -64,7 +66,7 @@ contract SubscriptionTokenV1FactoryTest is BaseTest {
         vm.startPrank(alice);
         vm.expectEmit(false, false, false, true, address(factory));
         emit Deployment(address(1), 1);
-        address deployment = factory.deploySubscription("test", "tst", "curi", "turi", 1e9, 2e9, address(0), 1);
+        address deployment = factory.deploySubscription("test", "tst", "curi", "turi", 1e9, 2e9, 0, address(0), 1);
         SubscriptionTokenV1 nft = SubscriptionTokenV1(payable(deployment));
         (address recipient, uint16 bps) = nft.feeSchedule();
         assertEq(recipient, bob);
@@ -122,7 +124,7 @@ contract SubscriptionTokenV1FactoryTest is BaseTest {
     function testDeployFeeTooLow() public {
         factory.updateMinimumDeployFee(1e12);
         vm.expectRevert("Insufficient ETH to deploy");
-        factory.deploySubscription("test", "tst", "curi", "turi", 1e9, 2e9, address(0), 0);
+        factory.deploySubscription("test", "tst", "curi", "turi", 1e9, 2e9, 0, address(0), 0);
     }
 
     function testDeployFeeCollectNone() public {
@@ -132,13 +134,13 @@ contract SubscriptionTokenV1FactoryTest is BaseTest {
 
     function testDeployFeeCapture() public {
         factory.updateMinimumDeployFee(1e12);
-        factory.deploySubscription{value: 1e12}("test", "tst", "curi", "turi", 1e9, 2e9, address(0), 0);
+        factory.deploySubscription{value: 1e12}("test", "tst", "curi", "turi", 1e9, 2e9, 0, address(0), 0);
         assertEq(1e12, address(factory).balance);
     }
 
     function testDeployFeeTransfer() public {
         factory.updateMinimumDeployFee(1e12);
-        factory.deploySubscription{value: 1e12}("test", "tst", "curi", "turi", 1e9, 2e9, address(0), 0);
+        factory.deploySubscription{value: 1e12}("test", "tst", "curi", "turi", 1e9, 2e9, 0, address(0), 0);
         vm.expectEmit(true, true, true, true, address(factory));
         emit DeployFeeTransfer(alice, 1e12);
         uint256 beforeBalance = alice.balance;
@@ -149,7 +151,7 @@ contract SubscriptionTokenV1FactoryTest is BaseTest {
 
     function testDeployFeeTransferNonOwner() public {
         factory.updateMinimumDeployFee(1e12);
-        factory.deploySubscription{value: 1e12}("test", "tst", "curi", "turi", 1e9, 2e9, address(0), 0);
+        factory.deploySubscription{value: 1e12}("test", "tst", "curi", "turi", 1e9, 2e9, 0, address(0), 0);
         vm.startPrank(alice);
         vm.expectRevert("Ownable: caller is not the owner");
         factory.transferDeployFees(alice);
@@ -157,7 +159,7 @@ contract SubscriptionTokenV1FactoryTest is BaseTest {
 
     function testDeployFeeTransferBadReceiver() public {
         factory.updateMinimumDeployFee(1e12);
-        factory.deploySubscription{value: 1e12}("test", "tst", "curi", "turi", 1e9, 2e9, address(0), 0);
+        factory.deploySubscription{value: 1e12}("test", "tst", "curi", "turi", 1e9, 2e9, 0, address(0), 0);
         vm.expectRevert("Failed to transfer Ether");
         factory.transferDeployFees(address(this));
     }
