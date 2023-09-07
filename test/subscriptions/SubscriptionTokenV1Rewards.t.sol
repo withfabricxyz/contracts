@@ -42,6 +42,8 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         vm.startPrank(alice);
         preBalance = alice.balance;
         assertEq((1e18 * 500) / 10_000, stp.rewardBalanceOf(alice));
+        vm.expectEmit(true, true, false, true, address(stp));
+        emit RewardWithdraw(alice, (1e18 * 500) / 10_000);
         stp.withdrawRewards();
         assertEq(preBalance + (1e18 * 500) / 10_000, alice.balance);
         assertEq(0, stp.rewardBalanceOf(alice));

@@ -3,7 +3,7 @@
 pragma solidity 0.8.17;
 
 /// @dev Shared constructs for the Subscription Token Protocol contracts
-library SubLib {
+library Shared {
     /// @dev The initialization parameters for a subscription token
     struct InitParams {
         /// @dev the name of the collection

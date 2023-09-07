@@ -5,11 +5,11 @@ pragma solidity 0.8.17;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin-upgradeable/contracts/utils/StringsUpgradeable.sol";
-import "@openzeppelin-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import "@openzeppelin-upgradeable/contracts/access/Ownable2StepUpgradeable.sol";
 import "@openzeppelin-upgradeable/contracts/security/PausableUpgradeable.sol";
 import "@openzeppelin-upgradeable/contracts/token/ERC721/ERC721Upgradeable.sol";
 import "@openzeppelin-upgradeable/contracts/security/ReentrancyGuardUpgradeable.sol";
-import "./SubLib.sol";
+import "./Shared.sol";
 
 /**
  * @title Subscription Token Protocol Version 1
@@ -23,7 +23,7 @@ import "./SubLib.sol";
  */
 contract SubscriptionTokenV1 is
     ERC721Upgradeable,
-    OwnableUpgradeable,
+    Ownable2StepUpgradeable,
     ReentrancyGuardUpgradeable,
     PausableUpgradeable
 {
@@ -192,9 +192,9 @@ contract SubscriptionTokenV1 is
 
     /**
      * @dev Initialize acts as the constructor, as this contract is intended to work with proxy contracts.
-     * @param params the init params (See SubLib.InitParams)
+     * @param params the init params (See Common.InitParams)
      */
-    function initialize(SubLib.InitParams memory params) public initializer {
+    function initialize(Shared.InitParams memory params) public initializer {
         require(params.owner != address(0), "Owner address cannot be 0x0");
         require(params.tokensPerSecond > 0, "Tokens per second must be > 0");
         require(params.minimumPurchaseSeconds > 0, "Min purchase seconds must be > 0");

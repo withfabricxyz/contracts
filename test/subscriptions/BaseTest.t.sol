@@ -3,7 +3,6 @@ pragma solidity ^0.8.17;
 
 import "src/tokens/ERC20Token.sol";
 import "src/subscriptions/SubscriptionTokenV1.sol";
-
 import "@forge/Test.sol";
 import "@forge/console2.sol";
 
@@ -13,7 +12,10 @@ abstract contract BaseTest is Test {
     /// @dev Emitted when the owner withdraws available funds
     event Withdraw(address indexed account, uint256 tokensTransferred);
 
-    /// @dev Emitted when a subscriber purchases time
+    /// @dev Emitted when a subscriber withdraws their rewards
+    event RewardWithdraw(address indexed account, uint256 tokensTransferred);
+
+    /// @dev Emitted when time is purchased (new nft or renewed)
     event Purchase(
         address indexed account,
         uint256 indexed tokenId,
@@ -34,7 +36,7 @@ abstract contract BaseTest is Test {
     /// @dev Emitted when the fee collector is updated
     event FeeCollectorChange(address indexed from, address indexed to);
 
-    /// @dev Emitted when a reward is paid out
+    /// @dev Emitted when a referral fee is paid out
     event ReferralPayout(
         uint256 indexed tokenId, address indexed referrer, uint256 indexed referralId, uint256 rewardAmount
     );
@@ -44,6 +46,9 @@ abstract contract BaseTest is Test {
 
     /// @dev Emitted when a referral code is deleted
     event ReferralDestroyed(uint256 id);
+
+    /// @dev Emitted when the supply cap is updated
+    event SupplyCapChange(uint256 supplyCap);
 
     modifier prank(address user) {
         vm.startPrank(user);
@@ -114,7 +119,7 @@ abstract contract BaseTest is Test {
         SubscriptionTokenV1 m = new SubscriptionTokenV1();
         vm.store(address(m), bytes32(uint256(0)), bytes32(0));
         m.initialize(
-            SubLib.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 2, 0, 0, address(0), address(_token))
+            Shared.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 2, 0, 0, address(0), address(_token))
         );
         return m;
     }
@@ -128,13 +133,13 @@ abstract contract BaseTest is Test {
         vm.store(address(m), bytes32(uint256(0)), bytes32(0));
         if (feeBps > 0) {
             m.initialize(
-                SubLib.InitParams(
+                Shared.InitParams(
                     "Meow Sub", "MEOW", "curi", "turi", creator, 2, minPurchase, rewardBps, feeBps, fees, address(0)
                 )
             );
         } else {
             m.initialize(
-                SubLib.InitParams(
+                Shared.InitParams(
                     "Meow Sub", "MEOW", "curi", "turi", creator, 2, minPurchase, rewardBps, 0, address(0), address(0)
                 )
             );

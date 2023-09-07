@@ -4,7 +4,7 @@ pragma solidity ^0.8.17;
 import "@forge/Test.sol";
 import "@forge/console2.sol";
 import "src/subscriptions/SubscriptionTokenV1.sol";
-import "src/subscriptions/SubLib.sol";
+import "src/subscriptions/Shared.sol";
 import "src/tokens/ERC20Token.sol";
 import "./BaseTest.t.sol";
 import "../finance/CrowdFinancingV1/mocks/MockFeeToken.sol";
@@ -15,7 +15,7 @@ contract SubscriptionTokenV1Test is BaseTest {
 
         vm.store(address(stp), bytes32(uint256(0)), bytes32(0));
         stp.initialize(
-            SubLib.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 4, 0, 0, address(0), address(0))
+            Shared.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 4, 0, 0, address(0), address(0))
         );
 
         deal(alice, 1e19);
@@ -36,28 +36,28 @@ contract SubscriptionTokenV1Test is BaseTest {
 
         vm.expectRevert("Owner address cannot be 0x0");
         stp.initialize(
-            SubLib.InitParams("Meow Sub", "MEOW", "curi", "turi", address(0), 2, 4, 0, 0, address(0), address(0))
+            Shared.InitParams("Meow Sub", "MEOW", "curi", "turi", address(0), 2, 4, 0, 0, address(0), address(0))
         );
 
         vm.expectRevert("Tokens per second must be > 0");
         stp.initialize(
-            SubLib.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 0, 4, 0, 0, address(0), address(0))
+            Shared.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 0, 4, 0, 0, address(0), address(0))
         );
 
         vm.expectRevert("Fee bps too high");
-        stp.initialize(SubLib.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 4, 0, 1500, fees, address(0)));
+        stp.initialize(Shared.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 4, 0, 1500, fees, address(0)));
 
         vm.expectRevert("Fees required when fee recipient is present");
-        stp.initialize(SubLib.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 4, 0, 0, fees, address(0)));
+        stp.initialize(Shared.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 4, 0, 0, fees, address(0)));
 
         vm.expectRevert("Min purchase seconds must be > 0");
         stp.initialize(
-            SubLib.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 0, 0, 0, address(0), address(0))
+            Shared.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 0, 0, 0, address(0), address(0))
         );
 
         vm.expectRevert("Reward bps too high");
         stp.initialize(
-            SubLib.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 4, 11_000, 0, address(0), address(0))
+            Shared.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 4, 11_000, 0, address(0), address(0))
         );
     }
 
@@ -296,7 +296,7 @@ contract SubscriptionTokenV1Test is BaseTest {
         SubscriptionTokenV1 m = new SubscriptionTokenV1();
         vm.store(address(m), bytes32(uint256(0)), bytes32(0));
         m.initialize(
-            SubLib.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 2, 0, 0, address(0), address(_token))
+            Shared.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 2, 0, 0, address(0), address(_token))
         );
         vm.startPrank(alice);
         _token.approve(address(m), 1e18);
@@ -436,6 +436,8 @@ contract SubscriptionTokenV1Test is BaseTest {
     /// Supply Cap
     function testSupplyCap() public {
         vm.startPrank(creator);
+        vm.expectEmit(true, true, false, true, address(stp));
+        emit SupplyCapChange(1);
         stp.setSupplyCap(1);
         vm.stopPrank();
         mint(alice, 1e18);

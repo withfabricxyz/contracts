@@ -5,6 +5,7 @@ pragma solidity 0.8.17;
 import "@openzeppelin/contracts/proxy/Clones.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./SubscriptionTokenV1.sol";
+import "./Shared.sol";
 
 /**
  *
@@ -94,7 +95,7 @@ contract SubscriptionTokenV1Factory is Ownable {
 
         address deployment = Clones.clone(_implementation);
         SubscriptionTokenV1(payable(deployment)).initialize(
-            SubLib.InitParams(
+            Shared.InitParams(
                 name,
                 symbol,
                 contractURI,
