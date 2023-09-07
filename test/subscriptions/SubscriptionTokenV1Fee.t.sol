@@ -115,6 +115,10 @@ contract SubscriptionTokenV1FeeTest is BaseTest {
         mint(alice, 1e18);
         mint(bob, 1e18);
 
+        vm.startPrank(creator);
+        stp.setTransferRecipient(creator);
+        vm.stopPrank();
+
         uint256 balance = creator.balance;
         uint256 feeBalance = fees.balance;
         uint256 expectedFee = (2e18 * 500) / 10000;

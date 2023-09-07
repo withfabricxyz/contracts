@@ -172,6 +172,9 @@ contract SubscriptionTokenV1 is
     /// @dev The maximum number of tokens which can be minted (adjustable over time, but will not allow setting below current count)
     uint256 private _supplyCap;
 
+    /// @dev The address of the account which can receive transfers via sponsored calls
+    address private _transferRecipient;
+
     /// @dev The subscription state for each account
     mapping(address => Subscription) private _subscriptions;
 
@@ -372,6 +375,14 @@ contract SubscriptionTokenV1 is
         emit SupplyCapChange(supplyCap);
     }
 
+    /**
+     * @notice Set a transfer recipient for automated/sponsored transfers
+     * @param recipient the recipient address
+     */
+    function setTransferRecipient(address recipient) external onlyOwner {
+        _transferRecipient = recipient;
+    }
+
     /////////////////////////
     // Sponsored Calls
     /////////////////////////
@@ -423,7 +434,8 @@ contract SubscriptionTokenV1 is
      * @dev This is a way for EOAs to pay gas fees on behalf of the creator (automation, etc)
      */
     function transferAllBalances() external {
-        _transferAllBalances(owner());
+        require(_transferRecipient != address(0), "Transfer recipient not set");
+        _transferAllBalances(_transferRecipient);
     }
 
     /////////////////////////

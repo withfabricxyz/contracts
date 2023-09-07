@@ -396,9 +396,17 @@ contract SubscriptionTokenV1Test is BaseTest {
         mint(alice, 1e18);
         mint(bob, 1e18);
 
-        uint256 balance = creator.balance;
+        uint256 balance = charlie.balance;
+        vm.expectRevert("Transfer recipient not set");
         stp.transferAllBalances();
-        assertEq(creator.balance, balance + 2e18);
+
+        vm.startPrank(creator);
+        stp.setTransferRecipient(charlie);
+        vm.stopPrank();
+
+        stp.transferAllBalances();
+
+        assertEq(charlie.balance, balance + 2e18);
     }
 
     /// Reconciation
