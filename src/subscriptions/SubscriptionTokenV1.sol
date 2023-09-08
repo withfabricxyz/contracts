@@ -812,43 +812,43 @@ contract SubscriptionTokenV1 is
 
     /**
      * @notice The percentage (as basis points) of creator earnings which are rewarded to subscribers
-     * @return the reward basis points
+     * @return bps reward basis points
      */
-    function rewardBps() external view returns (uint256) {
+    function rewardBps() external view returns (uint16 bps) {
         return _rewardBps;
     }
 
     /**
      * @notice The number of reward points allocated to all subscribers (used to calculate rewards)
-     * @return the total number of reward points
+     * @return numPoints total number of reward points
      */
-    function totalRewardPoints() external view returns (uint256) {
+    function totalRewardPoints() external view returns (uint256 numPoints) {
         return _totalRewardPoints;
     }
 
     /**
      * @notice The balance of the reward pool (for reward withdraws)
-     * @return the number of tokens
+     * @return numTokens number of tokens in the reward pool
      */
-    function rewardPoolBalance() external view returns (uint256) {
+    function rewardPoolBalance() external view returns (uint256 numTokens) {
         return _rewardPoolBalance;
     }
 
     /**
      * @notice The number of tokens available to withdraw from the reward pool, for a given account
      * @param account the account to check
-     * @return the number of tokens available to withdraw
+     * @return numTokens number of tokens available to withdraw
      */
-    function rewardBalanceOf(address account) external view returns (uint256) {
+    function rewardBalanceOf(address account) external view returns (uint256 numTokens) {
         Subscription memory sub = _subscriptions[account];
         return _rewardBalance(sub);
     }
 
     /**
      * @notice The ERC-20 address used for purchases, or 0x0 for native
-     * @return ERC20 address or 0x0 for native
+     * @return erc20 address or 0x0 for native
      */
-    function erc20Address() public view returns (address) {
+    function erc20Address() public view returns (address erc20) {
         return address(_token);
     }
 
@@ -863,34 +863,34 @@ contract SubscriptionTokenV1 is
     }
 
     /**
-     * @notice The contract metadata URI for NFT aggregators
-     * @return the URI
+     * @notice The contract metadata URI for accessing collection metadata
+     * @return uri the collection URI
      */
-    function contractURI() public view returns (string memory) {
+    function contractURI() public view returns (string memory uri) {
         return _contractURI;
     }
 
     /**
-     * @notice The base token URI for generating token metadata
-     * @return the URI
+     * @notice The base token URI for accessing token metadata
+     * @return uri the base token URI
      */
-    function baseTokenURI() public view returns (string memory) {
+    function baseTokenURI() public view returns (string memory uri) {
         return _tokenURI;
     }
 
     /**
      * @notice The number of tokens required for a single second of time
-     * @return the number
+     * @return numTokens per second
      */
-    function tps() external view returns (uint256) {
+    function tps() external view returns (uint256 numTokens) {
         return _tokensPerSecond;
     }
 
     /**
      * @notice The minimum number of seconds required for a purchase
-     * @return the number
+     * @return numSeconds minimum
      */
-    function minPurchaseSeconds() external view returns (uint256) {
+    function minPurchaseSeconds() external view returns (uint256 numSeconds) {
         return _minPurchaseSeconds;
     }
 
@@ -898,9 +898,9 @@ contract SubscriptionTokenV1 is
      * @notice Fetch the metadata URI for a given token
      * @dev If _tokenURI ends with a / then the tokenId is appended
      * @param tokenId the tokenId to fetch the metadata URI for
-     * @return the URI for the token
+     * @return uri the URI for the token
      */
-    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+    function tokenURI(uint256 tokenId) public view override returns (string memory uri) {
         _requireMinted(tokenId);
 
         bytes memory str = bytes(_tokenURI);
