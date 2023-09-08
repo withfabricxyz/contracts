@@ -36,7 +36,7 @@ contract SubscriptionTokenV1 is
     /// @dev The starting reward multiplier for subscriber rewards
     uint256 private constant _STARTING_REWARD_MULTIPLIER = 2 ** _NUM_REWARD_HALVINGS;
 
-    /// @dev Maximum fee basis points (12.5%)
+    /// @dev Maximum protocol fee basis points (12.5%)
     uint16 private constant _MAX_FEE_BIPS = 1250;
 
     /// @dev Maximum basis points (100%)
@@ -145,10 +145,10 @@ contract SubscriptionTokenV1 is
     /// @dev The total number of tokens allocated for the fee collector (accounting)
     uint256 private _feeBalance;
 
-    /// @dev The fee basis points (10000 = 100%, max = _MAX_FEE_BIPS)
+    /// @dev The protocol fee basis points (10000 = 100%, max = _MAX_FEE_BIPS)
     uint16 private _feeBps;
 
-    /// @dev The fee collector address (for withdraws or sponsored transfers)
+    /// @dev The protocol fee collector address (for withdraws or sponsored transfers)
     address private _feeCollector;
 
     /// @dev Flag which determines if the contract is erc20 denominated
@@ -366,7 +366,7 @@ contract SubscriptionTokenV1 is
     }
 
     /**
-     * @notice Update the maximum number of mintable tokens (subscriptions)
+     * @notice Update the maximum number of tokens (subscriptions)
      * @param supplyCap the new supply cap (must be greater than token count or 0 for unlimited)
      */
     function setSupplyCap(uint256 supplyCap) external onlyOwner {
@@ -430,7 +430,7 @@ contract SubscriptionTokenV1 is
     }
 
     /**
-     * @notice Transfer all balances to the creator and fee collector (if applicable)
+     * @notice Transfer all balances to the transfer recipient and fee collector (if applicable)
      * @dev This is a way for EOAs to pay gas fees on behalf of the creator (automation, etc)
      */
     function transferAllBalances() external {
@@ -489,7 +489,7 @@ contract SubscriptionTokenV1 is
         require(maxBps <= _MAX_BIPS, "maxBps too high");
         require(minBps <= maxBps, "minBps > maxBps");
         ReferralCode memory existing = _referralCodes[code];
-        require(existing.rewardBpsMin == existing.rewardBpsMax && existing.rewardBpsMin == 0, "Referral code exists");
+        require(existing.rewardBpsMin == 0 && existing.rewardBpsMax == 0, "Referral code exists");
         _referralCodes[code] = ReferralCode(minBps, maxBps);
         emit ReferralCreated(code, minBps, maxBps);
     }
@@ -590,7 +590,7 @@ contract SubscriptionTokenV1 is
         return finalAmount;
     }
 
-    /// @dev Transfer tokens to the creator, after allocating fees
+    /// @dev Transfer tokens to the creator, after allocating protocol fees and rewards
     function _transferToCreator(address to, uint256 amount) internal {
         uint256 finalAmount = _allocateFees(amount);
         finalAmount = _allocateRewards(finalAmount);
@@ -627,7 +627,7 @@ contract SubscriptionTokenV1 is
             _transferToCreator(balanceRecipient, balance);
         }
 
-        // Transfer out all remaining funds
+        // Transfer protocol fees
         _transferFees();
     }
 
@@ -827,7 +827,7 @@ contract SubscriptionTokenV1 is
 
     /**
      * @notice The contract metadata URI for NFT aggregators
-     * @return the contract metadata URI
+     * @return the URI
      */
     function contractURI() public view returns (string memory) {
         return _contractURI;
@@ -835,7 +835,7 @@ contract SubscriptionTokenV1 is
 
     /**
      * @notice The base token URI for generating token metadata
-     * @return the base token URI
+     * @return the URI
      */
     function baseTokenURI() public view returns (string memory) {
         return _tokenURI;
@@ -843,7 +843,7 @@ contract SubscriptionTokenV1 is
 
     /**
      * @notice The number of tokens required for a single second of time
-     * @return the number of tokens required for a single second of time
+     * @return the number
      */
     function tps() external view returns (uint256) {
         return _tokensPerSecond;
@@ -851,7 +851,7 @@ contract SubscriptionTokenV1 is
 
     /**
      * @notice The minimum number of seconds required for a purchase
-     * @return the minimum number of seconds required for a purchase
+     * @return the number
      */
     function minPurchaseSeconds() external view returns (uint256) {
         return _minPurchaseSeconds;
@@ -861,7 +861,7 @@ contract SubscriptionTokenV1 is
      * @notice Fetch the metadata URI for a given token
      * @dev If _tokenURI ends with a / then the tokenId is appended
      * @param tokenId the tokenId to fetch the metadata URI for
-     * @return the metadata URI for the given tokenId
+     * @return the URI for the token
      */
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         _requireMinted(tokenId);
