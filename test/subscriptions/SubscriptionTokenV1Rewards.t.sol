@@ -49,6 +49,17 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         assertEq(stp.totalRewardPoints(), 1e18 * 64);
     }
 
+    function testDisabledWithdraw() public {
+        stp = createETHSub(2592000, 0, 0);
+        mint(alice, 1e18);
+        withdraw();
+        assertEq(0, stp.rewardBalanceOf(alice));
+        vm.startPrank(alice);
+        vm.expectRevert("No rewards to withdraw");
+        stp.withdrawRewards();
+        vm.stopPrank();
+    }
+
     function testRewardPointWithdraw() public {
         mint(alice, 1e18);
         uint256 preBalance = creator.balance;
@@ -133,7 +144,7 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         vm.warp(2592000 * 3);
         vm.startPrank(bob);
         vm.expectEmit(true, true, false, true, address(stp));
-        emit RewardPointsSlashed(alice, bob, alicePoints);
+        emit RewardPointsSlashed(alice, bob, alicePoints, (alicePoints * 3000) / 10_000);
         stp.slashRewards(alice);
         vm.stopPrank();
 

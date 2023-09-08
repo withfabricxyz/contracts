@@ -16,7 +16,9 @@ abstract contract BaseTest is Test {
     event RewardWithdraw(address indexed account, uint256 tokensTransferred);
 
     /// @dev Emitted when a subscriber slashed the rewards of another subscriber
-    event RewardPointsSlashed(address indexed account, address indexed slasher, uint256 rewardPointsSlashed);
+    event RewardPointsSlashed(
+        address indexed account, address indexed slasher, uint256 rewardPointsSlashed, uint256 rewardPointsEarned
+    );
 
     /// @dev Emitted when time is purchased (new nft or renewed)
     event Purchase(
@@ -24,6 +26,7 @@ abstract contract BaseTest is Test {
         uint256 indexed tokenId,
         uint256 tokensTransferred,
         uint256 timePurchased,
+        uint256 rewardPoints,
         uint256 expiresAt
     );
 

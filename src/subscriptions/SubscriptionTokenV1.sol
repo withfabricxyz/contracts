@@ -56,7 +56,9 @@ contract SubscriptionTokenV1 is
     event RewardWithdraw(address indexed account, uint256 tokensTransferred);
 
     /// @dev Emitted when a subscriber slashed the rewards of another subscriber
-    event RewardPointsSlashed(address indexed account, address indexed slasher, uint256 rewardPointsSlashed);
+    event RewardPointsSlashed(
+        address indexed account, address indexed slasher, uint256 rewardPointsSlashed, uint256 rewardPointsEarned
+    );
 
     /// @dev Emitted when time is purchased (new nft or renewed)
     event Purchase(
@@ -64,6 +66,7 @@ contract SubscriptionTokenV1 is
         uint256 indexed tokenId,
         uint256 tokensTransferred,
         uint256 timePurchased,
+        uint256 rewardPoints,
         uint256 expiresAt
     );
 
@@ -300,7 +303,7 @@ contract SubscriptionTokenV1 is
         _subscriptions[msg.sender] = slasher;
         _totalRewardPoints -= (slashed - reward);
 
-        emit RewardPointsSlashed(account, msg.sender, slashed);
+        emit RewardPointsSlashed(account, msg.sender, slashed, reward);
     }
 
     /////////////////////////
@@ -348,29 +351,6 @@ contract SubscriptionTokenV1 is
         for (uint256 i = 0; i < accounts.length; i++) {
             _refund(accounts[i]);
         }
-    }
-
-    /**
-     * @notice Determine the total cost for refunding the given accounts
-     * @dev The value will change from block to block, so this is only an estimate
-     * @param accounts the list of accounts to refund
-     * @return the total number of tokens
-     */
-    function refundableTokenBalanceOfAll(address[] memory accounts) public view returns (uint256) {
-        uint256 amount;
-        for (uint256 i = 0; i < accounts.length; i++) {
-            amount += refundableBalanceOf(accounts[i]);
-        }
-        return amount * _tokensPerSecond;
-    }
-
-    /**
-     * @notice Determines if a refund can be processed for the given accounts with the current balance
-     * @param accounts the list of accounts to refund
-     * @return true if the refund can be processed
-     */
-    function canRefund(address[] memory accounts) public view returns (bool) {
-        return creatorBalance() >= refundableTokenBalanceOfAll(accounts);
     }
 
     /**
@@ -571,7 +551,7 @@ contract SubscriptionTokenV1 is
         sub.rewardPoints += rp;
         _subscriptions[account] = sub;
         _totalRewardPoints += rp;
-        emit Purchase(account, sub.tokenId, amount, tv, _subscriptionExpiresAt(sub));
+        emit Purchase(account, sub.tokenId, amount, tv, rp, _subscriptionExpiresAt(sub));
         return sub.tokenId;
     }
 
@@ -729,12 +709,12 @@ contract SubscriptionTokenV1 is
     }
 
     /// @dev The timestamp when the subscription expires
-    function _subscriptionExpiresAt(Subscription memory sub) internal view returns (uint256 numSeconds) {
+    function _subscriptionExpiresAt(Subscription memory sub) internal view returns (uint256) {
         return block.timestamp + _purchaseTimeRemaining(sub) + _grantTimeRemaining(sub);
     }
 
     /// @dev The reward balance for a given subscription
-    function _rewardBalance(Subscription memory sub) internal view returns (uint256 balance) {
+    function _rewardBalance(Subscription memory sub) internal view returns (uint256) {
         uint256 userShare = _rewardPoolTotal * sub.rewardPoints / _totalRewardPoints;
         if (userShare <= sub.rewardsWithdrawn) {
             return 0;
@@ -752,10 +732,36 @@ contract SubscriptionTokenV1 is
     ////////////////////////
 
     /**
+     * @notice Determine the total cost for refunding the given accounts
+     * @dev The value will change from block to block, so this is only an estimate
+     * @param accounts the list of accounts to refund
+     * @return numTokens total number of tokens for refund
+     */
+    function refundableTokenBalanceOfAll(address[] memory accounts) public view returns (uint256 numTokens) {
+        uint256 amount;
+        for (uint256 i = 0; i < accounts.length; i++) {
+            amount += refundableBalanceOf(accounts[i]);
+        }
+        return amount * _tokensPerSecond;
+    }
+
+    /**
+     * @notice Determines if a refund can be processed for the given accounts with the current balance
+     * @param accounts the list of accounts to refund
+     * @return refundable true if the refund can be processed from the current balance
+     */
+    function canRefund(address[] memory accounts) public view returns (bool refundable) {
+        return creatorBalance() >= refundableTokenBalanceOfAll(accounts);
+    }
+
+    /**
      * @notice The current reward multiplier used to calculate reward points on mint. This is halved every _minPurchaseSeconds and goes to 0 after N halvings.
      * @return multiplier the current value
      */
     function rewardMultiplier() public view returns (uint256 multiplier) {
+        if (_numRewardHalvings == 0) {
+            return 0;
+        }
         uint256 halvings = (block.timestamp - _deployBlockTime) / _minPurchaseSeconds;
         if (halvings > _numRewardHalvings) {
             return 0;
@@ -892,6 +898,15 @@ contract SubscriptionTokenV1 is
      */
     function minPurchaseSeconds() external view returns (uint256 numSeconds) {
         return _minPurchaseSeconds;
+    }
+
+    /**
+     * @notice Fetch the current supply cap (0 for unlimited)
+     * @return count the current number
+     * @return cap the max number of subscriptions
+     */
+    function supplyDetail() external view returns (uint256 count, uint256 cap) {
+        return (_tokenCounter, _supplyCap);
     }
 
     /**
