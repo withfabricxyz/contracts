@@ -21,6 +21,7 @@ import "./Shared.sol";
  *      additional functionalities for granting time, refunding accounts, fees, rewards, etc. This contract is designed to be used with
  *      Clones, but is not designed to be upgradeable. Added functionality will come with new versions.
  */
+
 contract SubscriptionTokenV1 is
     ERC721Upgradeable,
     Ownable2StepUpgradeable,
@@ -42,6 +43,9 @@ contract SubscriptionTokenV1 is
     /// @dev Maximum basis points (100%)
     uint16 private constant _MAX_BIPS = 10000;
 
+    /// @dev The basis points for slashed rewards that go to the slasher
+    uint16 private constant _REWARD_SLASHING_BPS = 3000;
+
     /// @dev Guard to ensure the purchase amount is valid
     modifier validAmount(uint256 amount) {
         require(amount >= _minimumPurchase, "Amount must be >= minimum purchase");
@@ -53,6 +57,9 @@ contract SubscriptionTokenV1 is
 
     /// @dev Emitted when a subscriber withdraws their rewards
     event RewardWithdraw(address indexed account, uint256 tokensTransferred);
+
+    /// @dev Emitted when a subscriber slashed the rewards of another subscriber
+    event RewardPointsSlashed(address indexed account, address indexed slasher, uint256 rewardPointsSlashed);
 
     /// @dev Emitted when time is purchased (new nft or renewed)
     event Purchase(
@@ -105,6 +112,8 @@ contract SubscriptionTokenV1 is
         uint256 rewardPoints;
         /// @dev The number of rewards withdrawn
         uint256 rewardsWithdrawn;
+        /// @dev The last time rewards were slashed
+        uint256 lastSlashAt;
     }
 
     /// @dev The referral code struct which holds the state of a referral code
@@ -247,10 +256,11 @@ contract SubscriptionTokenV1 is
     }
 
     /**
-     * @notice Withdraw available rewards
+     * @notice Withdraw available rewards. This is only possible if the subscription is active.
      */
     function withdrawRewards() external {
         Subscription memory sub = _subscriptions[msg.sender];
+        require(_isActive(sub), "Subscription not active");
         uint256 rewardAmount = _rewardBalance(sub);
         require(rewardAmount > 0, "No rewards to withdraw");
         sub.rewardsWithdrawn += rewardAmount;
@@ -258,6 +268,42 @@ contract SubscriptionTokenV1 is
         _rewardPoolBalance -= rewardAmount;
         _transferOut(msg.sender, rewardAmount);
         emit RewardWithdraw(msg.sender, rewardAmount);
+    }
+
+    /**
+     * @notice Slash the reward points for an expired subscription in proportion to the percentage of lapsed time. The caller receives a percent of the slashed rewards, and the rest is burned.
+     * @param account the account of the subscription to slash
+     */
+    function slashRewards(address account) external {
+        Subscription memory slasher = _subscriptions[msg.sender];
+        require(_isActive(slasher), "Subscription not active");
+
+        Subscription memory sub = _subscriptions[account];
+        uint256 slashTime = sub.purchaseOffset + sub.secondsPurchased;
+        if (sub.lastSlashAt > slashTime) {
+            slashTime = sub.lastSlashAt;
+        }
+        require(slashTime < block.timestamp, "Not slashable");
+        require(sub.rewardPoints > 0, "No reward points to slash");
+
+        // Determine the percentage of points to slash
+        uint256 bps = ((block.timestamp - slashTime) * _MAX_BIPS) / sub.secondsPurchased;
+        uint256 slashed = (sub.rewardPoints * bps) / _MAX_BIPS;
+        if (slashed > sub.rewardPoints) {
+            slashed = sub.rewardPoints;
+        }
+
+        uint256 reward = slashed * _REWARD_SLASHING_BPS / _MAX_BIPS;
+
+        sub.lastSlashAt = block.timestamp;
+        sub.rewardPoints -= slashed;
+        slasher.rewardPoints += reward;
+
+        _subscriptions[account] = sub;
+        _subscriptions[msg.sender] = slasher;
+        _totalRewardPoints -= (slashed - reward);
+
+        emit RewardPointsSlashed(account, msg.sender, slashed);
     }
 
     /////////////////////////
@@ -543,7 +589,7 @@ contract SubscriptionTokenV1 is
         if (sub.tokenId == 0) {
             require(_supplyCap == 0 || _tokenCounter < _supplyCap, "Supply cap reached");
             _tokenCounter += 1;
-            sub = Subscription(_tokenCounter, 0, 0, block.timestamp, block.timestamp, 0, 0);
+            sub = Subscription(_tokenCounter, 0, 0, block.timestamp, block.timestamp, 0, 0, 0);
             _safeMint(account, sub.tokenId);
         }
         return sub;
@@ -718,6 +764,11 @@ contract SubscriptionTokenV1 is
         return userShare - sub.rewardsWithdrawn;
     }
 
+    /// @dev Determine if a subscription is active
+    function _isActive(Subscription memory sub) internal view returns (bool) {
+        return _subscriptionExpiresAt(sub) > block.timestamp;
+    }
+
     ////////////////////////
     // Informational
     ////////////////////////
@@ -795,6 +846,14 @@ contract SubscriptionTokenV1 is
      */
     function totalRewardPoints() external view returns (uint256) {
         return _totalRewardPoints;
+    }
+
+    /**
+     * @notice The balance of the reward pool (for reward withdraws)
+     * @return the number of tokens
+     */
+    function rewardPoolBalance() external view returns (uint256) {
+        return _rewardPoolBalance;
     }
 
     /**

@@ -96,4 +96,105 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         stp.withdrawRewards();
         vm.stopPrank();
     }
+
+    function testWithdrawExpired() public {
+        mint(alice, 2592000 * 2);
+        vm.warp(60 days);
+        withdraw();
+        vm.startPrank(alice);
+        vm.expectRevert("Subscription not active");
+        stp.withdrawRewards();
+        vm.stopPrank();
+    }
+
+    function testSlashing() public {
+        mint(alice, 2592000 * 2);
+        mint(bob, 1e8);
+
+        uint256 beforePoints = stp.totalRewardPoints();
+        (,, uint256 bobPoints,) = stp.subscriptionOf(bob);
+        (,, uint256 alicePoints,) = stp.subscriptionOf(alice);
+
+        vm.warp(2592000 * 3);
+        vm.startPrank(bob);
+        vm.expectEmit(true, true, false, true, address(stp));
+        emit RewardPointsSlashed(alice, bob, alicePoints);
+        stp.slashRewards(alice);
+        vm.stopPrank();
+
+        uint256 afterPoints = stp.totalRewardPoints();
+        (,, uint256 bobAfterPoints,) = stp.subscriptionOf(bob);
+        (,, uint256 aliceAfterPoints,) = stp.subscriptionOf(alice);
+
+        assertEq(0, aliceAfterPoints);
+        assertEq(bobAfterPoints, bobPoints + (alicePoints * 3000) / 10_000);
+        assertEq(afterPoints, beforePoints - (alicePoints * 7000) / 10_000);
+    }
+
+    function testSlashingPartial() public {
+        mint(alice, 2592000 * 2);
+        mint(bob, 1e8);
+
+        uint256 beforePoints = stp.totalRewardPoints();
+        (,, uint256 bobPoints,) = stp.subscriptionOf(bob);
+        (,, uint256 alicePoints, uint256 expires) = stp.subscriptionOf(alice);
+
+        // 50% slash
+        uint256 warpTo = expires + (stp.balanceOf(alice) / 2);
+        vm.warp(warpTo);
+        vm.startPrank(bob);
+        stp.slashRewards(alice);
+        vm.stopPrank();
+
+        uint256 afterPoints = stp.totalRewardPoints();
+        (,, uint256 bobAfterPoints,) = stp.subscriptionOf(bob);
+        (,, uint256 aliceAfterPoints,) = stp.subscriptionOf(alice);
+
+        assertEq(alicePoints / 2, aliceAfterPoints);
+        assertEq(bobAfterPoints, bobPoints + (alicePoints * 3000) / 20_000);
+        assertEq(afterPoints, beforePoints - (alicePoints * 7000) / 20_000);
+    }
+
+    function testSlashingWithdraws() public {
+        mint(alice, 2592000 * 2);
+        vm.warp((stp.minPurchaseSeconds() * 3) + 1);
+        mint(bob, 1e8);
+
+        // Allocate rewards
+        withdraw();
+        vm.startPrank(bob);
+        stp.withdrawRewards();
+        assertEq(stp.rewardBalanceOf(bob), 0);
+        stp.slashRewards(alice);
+        assertEq(stp.rewardBalanceOf(bob), stp.rewardPoolBalance());
+        stp.withdrawRewards();
+        vm.stopPrank();
+    }
+
+    function testDoubleSlash() public {
+        mint(alice, 2592000 * 2);
+        vm.warp((stp.minPurchaseSeconds() * 3) + 1);
+        mint(bob, 1e8);
+        withdraw();
+        vm.startPrank(bob);
+        stp.slashRewards(alice);
+        vm.expectRevert("Not slashable");
+        stp.slashRewards(alice);
+        vm.warp((stp.minPurchaseSeconds() * 4) + 1);
+        vm.expectRevert("No reward points to slash");
+        stp.slashRewards(alice);
+        vm.stopPrank();
+    }
+
+    function testSlashingActive() public {
+        mint(alice, 2592000 * 2);
+        mint(bob, 1e8);
+        vm.startPrank(alice);
+        vm.expectRevert("Not slashable");
+        stp.slashRewards(alice);
+        vm.warp(60 days);
+        vm.expectRevert("Subscription not active");
+        stp.slashRewards(alice);
+        vm.stopPrank();
+    }
 }

@@ -15,6 +15,9 @@ abstract contract BaseTest is Test {
     /// @dev Emitted when a subscriber withdraws their rewards
     event RewardWithdraw(address indexed account, uint256 tokensTransferred);
 
+    /// @dev Emitted when a subscriber slashed the rewards of another subscriber
+    event RewardPointsSlashed(address indexed account, address indexed slasher, uint256 rewardPointsSlashed);
+
     /// @dev Emitted when time is purchased (new nft or renewed)
     event Purchase(
         address indexed account,
