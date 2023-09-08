@@ -45,7 +45,7 @@ abstract contract BaseTest is Test {
     );
 
     /// @dev Emitted when a new referral code is created
-    event ReferralCreated(uint256 id, uint16 rewardBpsMin, uint16 rewardBpsMax);
+    event ReferralCreated(uint256 id, uint16 rewardBps);
 
     /// @dev Emitted when a referral code is deleted
     event ReferralDestroyed(uint256 id);

@@ -88,7 +88,7 @@ contract SubscriptionTokenV1 is
     );
 
     /// @dev Emitted when a new referral code is created
-    event ReferralCreated(uint256 id, uint16 rewardBpsMin, uint16 rewardBpsMax);
+    event ReferralCreated(uint256 id, uint16 rewardBps);
 
     /// @dev Emitted when a referral code is deleted
     event ReferralDestroyed(uint256 id);
@@ -114,14 +114,6 @@ contract SubscriptionTokenV1 is
         uint256 rewardsWithdrawn;
         /// @dev The last time rewards were slashed
         uint256 lastSlashAt;
-    }
-
-    /// @dev The referral code struct which holds the state of a referral code
-    struct ReferralCode {
-        /// @dev The minimum reward basis points (can be equal to max for a fixed reward)
-        uint16 rewardBpsMin;
-        /// @dev The maximum reward basis points
-        uint16 rewardBpsMax;
     }
 
     /// @dev The metadata URI for the contract
@@ -188,7 +180,7 @@ contract SubscriptionTokenV1 is
     mapping(address => Subscription) private _subscriptions;
 
     /// @dev The collection of referral codes for referral rewards
-    mapping(uint256 => ReferralCode) private _referralCodes;
+    mapping(uint256 => uint16) private _referralCodes;
 
     ////////////////////////////////////
 
@@ -526,18 +518,15 @@ contract SubscriptionTokenV1 is
 
     /**
      * @notice Create a referral code for giving rewards to referrers on mint
-     * @dev It's possible to create a spread here for variable rewards
      * @param code the unique integer code for the referral
-     * @param minBps the minimum reward basis points
-     * @param maxBps the maximum reward basis points
+     * @param bps the reward basis points
      */
-    function createReferralCode(uint256 code, uint16 minBps, uint16 maxBps) external onlyOwner {
-        require(maxBps <= _MAX_BIPS, "maxBps too high");
-        require(minBps <= maxBps, "minBps > maxBps");
-        ReferralCode memory existing = _referralCodes[code];
-        require(existing.rewardBpsMin == 0 && existing.rewardBpsMax == 0, "Referral code exists");
-        _referralCodes[code] = ReferralCode(minBps, maxBps);
-        emit ReferralCreated(code, minBps, maxBps);
+    function createReferralCode(uint256 code, uint16 bps) external onlyOwner {
+        require(bps <= _MAX_BIPS, "bps too high");
+        uint16 existing = _referralCodes[code];
+        require(existing == 0, "Referral code exists");
+        _referralCodes[code] = bps;
+        emit ReferralCreated(code, bps);
     }
 
     /**
@@ -552,12 +541,10 @@ contract SubscriptionTokenV1 is
     /**
      * @notice Fetch the reward basis points for a given referral code
      * @param code the unique integer code for the referral
-     * @return minBps the minimum reward basis points
-     * @return maxBps the maximum reward basis points
+     * @return bps the reward basis points
      */
-    function referralRewards(uint256 code) external view returns (uint16 minBps, uint16 maxBps) {
-        ReferralCode memory existing = _referralCodes[code];
-        return (existing.rewardBpsMin, existing.rewardBpsMax);
+    function referralCodeBps(uint256 code) external view returns (uint16 bps) {
+        return _referralCodes[code];
     }
 
     ////////////////////////
@@ -729,24 +716,10 @@ contract SubscriptionTokenV1 is
 
     /// @dev Compute the reward amount for a given token amount and referral code
     function _referralAmount(uint256 tokenAmount, uint256 referralCode) internal view returns (uint256) {
-        ReferralCode memory code = _referralCodes[referralCode];
-        if (code.rewardBpsMin == 0 && code.rewardBpsMax == 0) {
+        uint16 referralBps = _referralCodes[referralCode];
+        if (referralBps == 0) {
             return 0;
         }
-
-        uint256 referralBps;
-        uint256 delta = code.rewardBpsMax - code.rewardBpsMin;
-        if (delta == 0) {
-            referralBps = code.rewardBpsMin;
-        } else {
-            // Psuedo random value between min and max (variable reward). This is weak, but acceptable given the nature
-            // of these rewards. The amount of tokens transferred will never be less than the minimum reward. If a miner
-            // is the referrer, then rewards could be biased towards the max reward. Creators should opt to use a fixed
-            // reward if they are concerned about this.
-            referralBps = code.rewardBpsMin
-                + uint256(keccak256(abi.encode(block.difficulty, msg.sender, tokenAmount, _tokensOut))) % delta;
-        }
-
         return (tokenAmount * referralBps) / _MAX_BIPS;
     }
 
