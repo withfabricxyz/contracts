@@ -122,7 +122,7 @@ abstract contract BaseTest is Test {
         SubscriptionTokenV1 m = new SubscriptionTokenV1();
         vm.store(address(m), bytes32(uint256(0)), bytes32(0));
         m.initialize(
-            Shared.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 2, 0, 0, address(0), address(_token))
+            Shared.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 2, 0, 0, 0, address(0), address(_token))
         );
         return m;
     }
@@ -137,13 +137,13 @@ abstract contract BaseTest is Test {
         if (feeBps > 0) {
             m.initialize(
                 Shared.InitParams(
-                    "Meow Sub", "MEOW", "curi", "turi", creator, 2, minPurchase, rewardBps, feeBps, fees, address(0)
+                    "Meow Sub", "MEOW", "curi", "turi", creator, 2, minPurchase, rewardBps, 6, feeBps, fees, address(0)
                 )
             );
         } else {
             m.initialize(
                 Shared.InitParams(
-                    "Meow Sub", "MEOW", "curi", "turi", creator, 2, minPurchase, rewardBps, 0, address(0), address(0)
+                    "Meow Sub", "MEOW", "curi", "turi", creator, 2, minPurchase, rewardBps, 6, 0, address(0), address(0)
                 )
             );
         }

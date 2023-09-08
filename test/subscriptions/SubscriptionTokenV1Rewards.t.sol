@@ -18,12 +18,27 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         stp = createETHSub(2592000, 0, 500);
     }
 
+    function testSingleHalving() public {
+        SubscriptionTokenV1 m = new SubscriptionTokenV1();
+        vm.store(address(m), bytes32(uint256(0)), bytes32(0));
+        m.initialize(
+            Shared.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 10, 500, 1, 0, address(0), address(0))
+        );
+        assertEq(m.rewardMultiplier(), 2);
+        vm.warp(block.timestamp + 11);
+        assertEq(m.rewardMultiplier(), 1);
+        vm.warp(block.timestamp + 21);
+        assertEq(m.rewardMultiplier(), 0);
+    }
+
     function testDecay() public {
         uint256 halvings = 6;
-        for (uint256 i = 0; i < halvings; i++) {
+        for (uint256 i = 0; i <= halvings; i++) {
             vm.warp((stp.minPurchaseSeconds() * i) + 1);
             assertEq(stp.rewardMultiplier(), (2 ** (halvings - i)));
         }
+        vm.warp((stp.minPurchaseSeconds() * 7) + 1);
+        assertEq(stp.rewardMultiplier(), 0);
     }
 
     function testRewardPointAllocation() public {

@@ -22,6 +22,8 @@ library Shared {
         uint256 minimumPurchaseSeconds;
         /// @dev the basis points for reward allocations
         uint16 rewardBps;
+        /// @dev the number of times the reward rate is halved (until it reaches one). 6 = 64,32,16,16,8,4,2,1 .. then 0
+        uint8 numRewardHalvings;
         /// @dev the basis points for fee allocations
         uint16 feeBps;
         /// @dev the address of the fee recipient

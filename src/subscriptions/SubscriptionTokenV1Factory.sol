@@ -104,6 +104,7 @@ contract SubscriptionTokenV1Factory is Ownable {
                 tokensPerSecond,
                 minimumPurchaseSeconds,
                 rewardBps,
+                6, // Fixed halvings
                 fees.basisPoints,
                 fees.collector,
                 erc20TokenAddr

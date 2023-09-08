@@ -31,11 +31,8 @@ contract SubscriptionTokenV1 is
     using SafeERC20 for IERC20;
     using StringsUpgradeable for uint256;
 
-    /// @dev The number of reward halvings. This is used to calculate the reward multiplier for early supporters, if the creator chooses to reward them.
-    uint256 private constant _NUM_REWARD_HALVINGS = 6;
-
-    /// @dev The starting reward multiplier for subscriber rewards
-    uint256 private constant _STARTING_REWARD_MULTIPLIER = 2 ** _NUM_REWARD_HALVINGS;
+    /// @dev The maximum number of reward halvings (limiting this prevents overflow)
+    uint256 private constant _MAX_REWARD_HALVINGS = 32;
 
     /// @dev Maximum protocol fee basis points (12.5%)
     uint16 private constant _MAX_FEE_BIPS = 1250;
@@ -170,6 +167,9 @@ contract SubscriptionTokenV1 is
     /// @dev The basis points for reward allocations
     uint16 private _rewardBps;
 
+    /// @dev The number of reward halvings. This is used to calculate the reward multiplier for early supporters, if the creator chooses to reward them.
+    uint256 private _numRewardHalvings;
+
     /// @dev The maximum number of tokens which can be minted (adjustable over time, but will not allow setting below current count)
     uint256 private _supplyCap;
 
@@ -204,8 +204,12 @@ contract SubscriptionTokenV1 is
         require(params.minimumPurchaseSeconds > 0, "Min purchase seconds must be > 0");
         require(params.feeBps <= _MAX_FEE_BIPS, "Fee bps too high");
         require(params.rewardBps <= _MAX_BIPS, "Reward bps too high");
+        require(params.numRewardHalvings <= _MAX_REWARD_HALVINGS, "Reward halvings too high");
         if (params.feeRecipient != address(0)) {
             require(params.feeBps > 0, "Fees required when fee recipient is present");
+        }
+        if (params.rewardBps > 0) {
+            require(params.numRewardHalvings > 0, "Reward halvings too low");
         }
 
         __ERC721_init(params.name, params.symbol);
@@ -218,6 +222,7 @@ contract SubscriptionTokenV1 is
         _minimumPurchase = params.minimumPurchaseSeconds * params.tokensPerSecond;
         _minPurchaseSeconds = params.minimumPurchaseSeconds;
         _rewardBps = params.rewardBps;
+        _numRewardHalvings = params.numRewardHalvings;
         _feeBps = params.feeBps;
         _feeCollector = params.feeRecipient;
         _token = IERC20(params.erc20TokenAddr);
@@ -747,15 +752,15 @@ contract SubscriptionTokenV1 is
     ////////////////////////
 
     /**
-     * @notice The current reward multiplier used to calculate reward points on mint. This is halved every _minPurchaseSeconds and eventually goes to 0.
+     * @notice The current reward multiplier used to calculate reward points on mint. This is halved every _minPurchaseSeconds and goes to 0 after N halvings.
      * @return multiplier the current value
      */
     function rewardMultiplier() public view returns (uint256 multiplier) {
         uint256 halvings = (block.timestamp - _deployBlockTime) / _minPurchaseSeconds;
-        if (halvings >= _NUM_REWARD_HALVINGS + 1) {
+        if (halvings > _numRewardHalvings) {
             return 0;
         }
-        return _STARTING_REWARD_MULTIPLIER / (2 ** halvings);
+        return (2 ** _numRewardHalvings) / (2 ** halvings);
     }
 
     /**
