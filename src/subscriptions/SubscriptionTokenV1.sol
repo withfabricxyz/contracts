@@ -96,6 +96,9 @@ contract SubscriptionTokenV1 is
     /// @dev Emitted when the supply cap is updated
     event SupplyCapChange(uint256 supplyCap);
 
+    /// @dev Emitted when the transfer recipient is updated
+    event TransferRecipientChange(address indexed recipient);
+
     /// @dev The subscription struct which holds the state of a subscription for an account
     struct Subscription {
         /// @dev The tokenId for the subscription
@@ -405,6 +408,7 @@ contract SubscriptionTokenV1 is
      */
     function setTransferRecipient(address recipient) external onlyOwner {
         _transferRecipient = recipient;
+        emit TransferRecipientChange(recipient);
     }
 
     /////////////////////////
@@ -908,6 +912,14 @@ contract SubscriptionTokenV1 is
      */
     function supplyDetail() external view returns (uint256 count, uint256 cap) {
         return (_tokenCounter, _supplyCap);
+    }
+
+    /**
+     * @notice Fetch the current transfer recipient address
+     * @return recipient the address or 0x0 address for none
+     */
+    function transferRecipient() external view returns (address recipient) {
+        return _transferRecipient;
     }
 
     /**

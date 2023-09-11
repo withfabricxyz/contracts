@@ -56,6 +56,9 @@ abstract contract BaseTest is Test {
     /// @dev Emitted when the supply cap is updated
     event SupplyCapChange(uint256 supplyCap);
 
+    /// @dev Emitted when the transfer recipient is updated
+    event TransferRecipientChange(address indexed recipient);
+
     modifier prank(address user) {
         vm.startPrank(user);
         _;

@@ -408,8 +408,12 @@ contract SubscriptionTokenV1Test is BaseTest {
         stp.transferAllBalances();
 
         vm.startPrank(creator);
+        vm.expectEmit(true, true, false, true, address(stp));
+        emit TransferRecipientChange(charlie);
         stp.setTransferRecipient(charlie);
         vm.stopPrank();
+
+        assertEq(charlie, stp.transferRecipient());
 
         stp.transferAllBalances();
 
