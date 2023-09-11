@@ -271,7 +271,8 @@ contract SubscriptionTokenV1 is
     }
 
     /**
-     * @notice Slash the reward points for an expired subscription in proportion to the percentage of lapsed time. The caller receives a percent of the slashed rewards, and the rest is burned.
+     * @notice Slash the reward points for an expired subscription in proportion to the percentage of lapsed time.
+     *         The caller receives a percent of the slashed rewards, and the rest is burned.
      * @param account the account of the subscription to slash
      */
     function slashRewards(address account) external {
