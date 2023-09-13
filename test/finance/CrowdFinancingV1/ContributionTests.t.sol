@@ -16,13 +16,13 @@ contract ContributionTests is BaseCampaignTest {
         assertEq(1e18, campaign().balanceOf(alice));
     }
 
-    function testDepositEmit() public multiTokenTest {
+    function testDepositEmit() public ethTest prank(alice) {
         dealMulti(alice, 1e19);
         vm.expectEmit(true, true, true, true, address(campaign()));
         emit Contribution(alice, 1e18);
         vm.expectEmit(true, true, true, true, address(campaign()));
         emit Transfer(address(0), alice, 1e18);
-        deposit(alice, 1e18);
+        campaign().contributeEth{value: 1e18}();
     }
 
     function testEarlycontributeEth() public ethTest {
