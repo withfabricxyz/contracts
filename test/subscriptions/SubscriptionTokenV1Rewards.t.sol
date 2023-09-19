@@ -133,28 +133,41 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         vm.stopPrank();
     }
 
+    function testSlashingNoRewards() public {
+        vm.store(address(stp), bytes32(uint256(0)), bytes32(0));
+        stp.initialize(
+            Shared.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 10, 0, 1, 0, address(0), address(0))
+        );
+
+        mint(alice, 2592000 * 2);
+        mint(bob, 1e8);
+
+        vm.warp(2592000 * 3);
+        vm.startPrank(bob);
+        vm.expectRevert("Rewards disabled");
+        stp.slashRewards(alice);
+        vm.stopPrank();
+    }
+
     function testSlashing() public {
         mint(alice, 2592000 * 2);
         mint(bob, 1e8);
 
         uint256 beforePoints = stp.totalRewardPoints();
-        (,, uint256 bobPoints,) = stp.subscriptionOf(bob);
         (,, uint256 alicePoints,) = stp.subscriptionOf(alice);
 
         vm.warp(2592000 * 3);
         vm.startPrank(bob);
         vm.expectEmit(true, true, false, true, address(stp));
-        emit RewardPointsSlashed(alice, bob, alicePoints, (alicePoints * 3000) / 10_000);
+        emit RewardPointsSlashed(alice, bob, alicePoints);
         stp.slashRewards(alice);
         vm.stopPrank();
 
         uint256 afterPoints = stp.totalRewardPoints();
-        (,, uint256 bobAfterPoints,) = stp.subscriptionOf(bob);
         (,, uint256 aliceAfterPoints,) = stp.subscriptionOf(alice);
 
         assertEq(0, aliceAfterPoints);
-        assertEq(bobAfterPoints, bobPoints + (alicePoints * 3000) / 10_000);
-        assertEq(afterPoints, beforePoints - (alicePoints * 7000) / 10_000);
+        assertEq(afterPoints, beforePoints - alicePoints);
     }
 
     function testSlashingPartial() public {
@@ -162,7 +175,6 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         mint(bob, 1e8);
 
         uint256 beforePoints = stp.totalRewardPoints();
-        (,, uint256 bobPoints,) = stp.subscriptionOf(bob);
         (,, uint256 alicePoints, uint256 expires) = stp.subscriptionOf(alice);
 
         // 50% slash
@@ -173,12 +185,10 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         vm.stopPrank();
 
         uint256 afterPoints = stp.totalRewardPoints();
-        (,, uint256 bobAfterPoints,) = stp.subscriptionOf(bob);
         (,, uint256 aliceAfterPoints,) = stp.subscriptionOf(alice);
 
         assertEq(alicePoints / 2, aliceAfterPoints);
-        assertEq(bobAfterPoints, bobPoints + (alicePoints * 3000) / 20_000);
-        assertEq(afterPoints, beforePoints - (alicePoints * 7000) / 20_000);
+        assertEq(afterPoints, beforePoints - (alicePoints / 2));
     }
 
     function testSlashingWithdraws() public {
