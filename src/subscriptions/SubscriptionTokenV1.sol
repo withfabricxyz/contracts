@@ -40,9 +40,6 @@ contract SubscriptionTokenV1 is
     /// @dev Maximum basis points (100%)
     uint16 private constant _MAX_BIPS = 10000;
 
-    /// @dev The basis points for slashed rewards that go to the slasher
-    uint16 private constant _REWARD_SLASHING_BPS = 3000;
-
     /// @dev Guard to ensure the purchase amount is valid
     modifier validAmount(uint256 amount) {
         require(amount >= _minimumPurchase, "Amount must be >= minimum purchase");
@@ -56,9 +53,7 @@ contract SubscriptionTokenV1 is
     event RewardWithdraw(address indexed account, uint256 tokensTransferred);
 
     /// @dev Emitted when a subscriber slashed the rewards of another subscriber
-    event RewardPointsSlashed(
-        address indexed account, address indexed slasher, uint256 rewardPointsSlashed, uint256 rewardPointsEarned
-    );
+    event RewardPointsSlashed(address indexed account, address indexed slasher, uint256 rewardPointsSlashed);
 
     /// @dev Emitted when time is purchased (new nft or renewed)
     event Purchase(
@@ -275,10 +270,11 @@ contract SubscriptionTokenV1 is
 
     /**
      * @notice Slash the reward points for an expired subscription in proportion to the percentage of lapsed time.
-     *         The caller receives a percent of the slashed rewards, and the rest is burned.
+     *         Any slashable points are burned, increasing the value of remaining points.
      * @param account the account of the subscription to slash
      */
     function slashRewards(address account) external {
+        require(_rewardBps > 0, "Rewards disabled");
         Subscription memory slasher = _subscriptions[msg.sender];
         require(_isActive(slasher), "Subscription not active");
 
@@ -290,24 +286,19 @@ contract SubscriptionTokenV1 is
         require(slashTime < block.timestamp, "Not slashable");
         require(sub.rewardPoints > 0, "No reward points to slash");
 
-        // Determine the percentage of points to slash
+        // Calculate the number of reward points to slash
         uint256 bps = ((block.timestamp - slashTime) * _MAX_BIPS) / sub.secondsPurchased;
         uint256 slashed = (sub.rewardPoints * bps) / _MAX_BIPS;
         if (slashed > sub.rewardPoints) {
             slashed = sub.rewardPoints;
         }
 
-        uint256 reward = slashed * _REWARD_SLASHING_BPS / _MAX_BIPS;
-
         sub.lastSlashAt = block.timestamp;
         sub.rewardPoints -= slashed;
-        slasher.rewardPoints += reward;
-
+        _totalRewardPoints -= slashed;
         _subscriptions[account] = sub;
-        _subscriptions[msg.sender] = slasher;
-        _totalRewardPoints -= (slashed - reward);
 
-        emit RewardPointsSlashed(account, msg.sender, slashed, reward);
+        emit RewardPointsSlashed(account, msg.sender, slashed);
     }
 
     /////////////////////////
