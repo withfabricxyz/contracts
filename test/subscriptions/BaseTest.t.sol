@@ -18,6 +18,9 @@ abstract contract BaseTest is Test {
     /// @dev Emitted when a subscriber slashed the rewards of another subscriber
     event RewardPointsSlashed(address indexed account, address indexed slasher, uint256 rewardPointsSlashed);
 
+    /// @dev Emitted when tokens are allocated to the reward pool
+    event RewardsAllocated(uint256 tokens);
+
     /// @dev Emitted when time is purchased (new nft or renewed)
     event Purchase(
         address indexed account,
@@ -39,6 +42,9 @@ abstract contract BaseTest is Test {
 
     /// @dev Emitted when the fee collector is updated
     event FeeCollectorChange(address indexed from, address indexed to);
+
+    /// @dev Emitted when tokens are allocated to the fee pool
+    event FeeAllocated(uint256 tokens);
 
     /// @dev Emitted when a referral fee is paid out
     event ReferralPayout(
