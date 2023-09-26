@@ -55,6 +55,9 @@ contract SubscriptionTokenV1 is
     /// @dev Emitted when a subscriber slashed the rewards of another subscriber
     event RewardPointsSlashed(address indexed account, address indexed slasher, uint256 rewardPointsSlashed);
 
+    /// @dev Emitted when tokens are allocated to the reward pool
+    event RewardsAllocated(uint256 tokens);
+
     /// @dev Emitted when time is purchased (new nft or renewed)
     event Purchase(
         address indexed account,
@@ -76,6 +79,9 @@ contract SubscriptionTokenV1 is
 
     /// @dev Emitted when the fee collector is updated
     event FeeCollectorChange(address indexed from, address indexed to);
+
+    /// @dev Emitted when tokens are allocated to the fee pool
+    event FeeAllocated(uint256 tokens);
 
     /// @dev Emitted when a referral fee is paid out
     event ReferralPayout(
@@ -570,6 +576,7 @@ contract SubscriptionTokenV1 is
         }
         uint256 fee = (amount * _feeBps) / _MAX_BIPS;
         _feeBalance += fee;
+        emit FeeAllocated(fee);
         return amount - fee;
     }
 
@@ -581,6 +588,7 @@ contract SubscriptionTokenV1 is
         uint256 rewards = (amount * _rewardBps) / _MAX_BIPS;
         _rewardPoolBalance += rewards;
         _rewardPoolTotal += rewards;
+        emit RewardsAllocated(rewards);
         return amount - rewards;
     }
 

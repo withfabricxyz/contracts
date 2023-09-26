@@ -112,6 +112,8 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         assertEq(0, stp.rewardBalanceOf(alice));
 
         mint(doug, 1e18);
+        vm.expectEmit(true, true, false, true, address(stp));
+        emit RewardsAllocated(1e18 * 500 / 10_000);
         withdraw();
 
         uint256 withdrawn = (totalPool * 64) / (64 + 32 + 16 + 8);
