@@ -37,6 +37,9 @@ abstract contract BaseTest is Test {
     /// @dev Emitted when the creator refunds a subscribers remaining time
     event Refund(address indexed account, uint256 indexed tokenId, uint256 tokensTransferred, uint256 timeReclaimed);
 
+    /// @dev Emitted when the creator tops up the contract balance on refund
+    event RefundTopUp(uint256 tokensIn);
+
     /// @dev Emitted when the fees are transferred to the collector
     event FeeTransfer(address indexed from, address indexed to, uint256 tokensTransferred);
 

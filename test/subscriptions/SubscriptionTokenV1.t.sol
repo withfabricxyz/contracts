@@ -238,6 +238,8 @@ contract SubscriptionTokenV1Test is BaseTest {
 
         // Send eth to contract while refunding
         vm.expectEmit(true, true, false, true, address(stp));
+        emit RefundTopUp(1e18);
+        vm.expectEmit(true, true, false, true, address(stp));
         emit Refund(alice, 1, 1e18, 1e18 / 2);
         stp.refund{value: 1e18}(1e18, list(alice));
         assertEq(0, address(stp).balance);

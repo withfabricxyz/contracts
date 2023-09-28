@@ -74,6 +74,9 @@ contract SubscriptionTokenV1 is
     /// @dev Emitted when the creator refunds a subscribers remaining time
     event Refund(address indexed account, uint256 indexed tokenId, uint256 tokensTransferred, uint256 timeReclaimed);
 
+    /// @dev Emitted when the creator tops up the contract balance on refund
+    event RefundTopUp(uint256 tokensIn);
+
     /// @dev Emitted when the fees are transferred to the collector
     event FeeTransfer(address indexed from, address indexed to, uint256 tokensTransferred);
 
@@ -344,7 +347,8 @@ contract SubscriptionTokenV1 is
      */
     function refund(uint256 numTokensIn, address[] memory accounts) external payable onlyOwner {
         if (numTokensIn > 0) {
-            _transferIn(msg.sender, numTokensIn);
+            uint256 finalAmount = _transferIn(msg.sender, numTokensIn);
+            emit RefundTopUp(finalAmount);
         } else if (msg.value > 0) {
             revert("Unexpected value transfer");
         }
