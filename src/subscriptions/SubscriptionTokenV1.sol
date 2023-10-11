@@ -174,6 +174,9 @@ contract SubscriptionTokenV1 is
     /// @dev The reward pool total (used to calculate reward withdraws accurately)
     uint256 private _rewardPoolTotal;
 
+    /// @dev The reward pool tokens slashed (used to calculate reward withdraws accurately)
+    uint256 private _rewardPoolSlashed;
+
     /// @dev The basis points for reward allocations
     uint16 private _rewardBps;
 
@@ -300,6 +303,17 @@ contract SubscriptionTokenV1 is
         uint256 slashed = (sub.rewardPoints * bps) / _MAX_BIPS;
         if (slashed > sub.rewardPoints) {
             slashed = sub.rewardPoints;
+        }
+
+        // Account for the value of reward withdraws to ensure reward balances of other accounts
+        // do not increase disproportionately upon slash
+        uint256 slashedValue = (sub.rewardsWithdrawn * bps) / _MAX_BIPS;
+        if (slashedValue > 0) {
+            if (slashedValue > sub.rewardsWithdrawn) {
+                slashedValue = sub.rewardsWithdrawn;
+            }
+            _rewardPoolSlashed += slashedValue;
+            sub.rewardsWithdrawn -= slashedValue;
         }
 
         sub.lastSlashAt = block.timestamp;
@@ -723,7 +737,7 @@ contract SubscriptionTokenV1 is
 
     /// @dev The reward balance for a given subscription
     function _rewardBalance(Subscription memory sub) internal view returns (uint256) {
-        uint256 userShare = _rewardPoolTotal * sub.rewardPoints / _totalRewardPoints;
+        uint256 userShare = (_rewardPoolTotal - _rewardPoolSlashed) * sub.rewardPoints / _totalRewardPoints;
         if (userShare <= sub.rewardsWithdrawn) {
             return 0;
         }
