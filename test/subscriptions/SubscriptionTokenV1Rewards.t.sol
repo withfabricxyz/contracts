@@ -235,4 +235,95 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         stp.slashRewards(alice);
         vm.stopPrank();
     }
+
+    function testSlashPostWithdraw() public {
+        mint(alice, 3e8);
+        mint(bob, 2e8);
+        mint(charlie, 1e8);
+
+        withdraw();
+        uint256 bobBalance = stp.rewardBalanceOf(bob);
+        assertEq(bobBalance, 10000000);
+
+        // withdraw rewards for alice
+        vm.startPrank(alice);
+        stp.withdrawRewards();
+        vm.stopPrank();
+
+        // Go past expiration
+        (,,, uint256 expires) = stp.subscriptionOf(alice);
+        vm.warp(expires + expires + 1);
+
+        // activate and slash alice
+        mint(bob, 1e7);
+        vm.startPrank(bob);
+        stp.slashRewards(alice);
+        vm.stopPrank();
+
+        assertEq(stp.rewardBalanceOf(bob), bobBalance);
+    }
+
+    function testSlashPostWithdrawDistanceFuture() public {
+        mint(alice, 3e8);
+        mint(bob, 2e8);
+        mint(charlie, 1e8);
+
+        withdraw();
+        uint256 bobBalance = stp.rewardBalanceOf(bob);
+        assertEq(bobBalance, 10000000);
+
+        // withdraw rewards for alice
+        vm.startPrank(alice);
+        stp.withdrawRewards();
+        vm.stopPrank();
+
+        // Go far past expiration
+        (,,, uint256 expires) = stp.subscriptionOf(alice);
+        vm.warp(expires * 5);
+
+        // activate and slash alice
+        mint(bob, 1e7);
+        vm.startPrank(bob);
+        stp.slashRewards(alice);
+        vm.stopPrank();
+
+        assertEq(stp.rewardBalanceOf(bob), bobBalance);
+    }
+
+    function testHalfSlashPostWithdraw() public {
+        mint(alice, 3e8);
+        mint(bob, 2e8);
+        mint(charlie, 1e8);
+
+        withdraw();
+        uint256 bobBalance = stp.rewardBalanceOf(bob);
+        assertEq(bobBalance, 10000000);
+
+        // withdraw rewards for alice
+        vm.startPrank(alice);
+        stp.withdrawRewards();
+        vm.stopPrank();
+
+        // slash half of rewards
+        (,,, uint256 expires) = stp.subscriptionOf(alice);
+        vm.warp(expires + ((expires - block.timestamp) / 2));
+
+        // slash alice
+        mint(bob, 1e7);
+        vm.startPrank(bob);
+        stp.slashRewards(alice);
+        vm.stopPrank();
+
+        assertEq(stp.rewardBalanceOf(bob), bobBalance);
+
+        // slash the rest
+        vm.warp(expires + expires + 1);
+
+        mint(bob, 1e7);
+        vm.startPrank(bob);
+        stp.slashRewards(alice);
+        vm.stopPrank();
+
+        assertEq(stp.rewardBalanceOf(bob), bobBalance);
+    }
 }
