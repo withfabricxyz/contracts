@@ -586,20 +586,30 @@ contract SubscriptionTokenV1 is
         sub.rewardPoints += rp;
         _subscriptions[account] = sub;
         _totalRewardPoints += rp;
+
+        // Mint the NFT if it does not exist before purchase event for indexers
+        _maybeMint(account, sub.tokenId);
+
         emit Purchase(account, sub.tokenId, amount, tv, rp, _subscriptionExpiresAt(sub));
         return sub.tokenId;
     }
 
-    /// @dev Get or create/mint a new subscription
+    /// @dev Get or build a new subscription
     function _fetchSubscription(address account) internal returns (Subscription memory) {
         Subscription memory sub = _subscriptions[account];
         if (sub.tokenId == 0) {
             require(_supplyCap == 0 || _tokenCounter < _supplyCap, "Supply cap reached");
             _tokenCounter += 1;
             sub = Subscription(_tokenCounter, 0, 0, block.timestamp, block.timestamp, 0, 0, 0);
-            _safeMint(account, sub.tokenId);
         }
         return sub;
+    }
+
+    /// @dev Mint the NFT if it does not exist. Used after grant/purchase state changes (check effects)
+    function _maybeMint(address account, uint256 tokenId) private {
+        if (_ownerOf(tokenId) == address(0)) {
+            _safeMint(account, tokenId);
+        }
     }
 
     /// @dev Allocate tokens to the fee collector
@@ -697,6 +707,9 @@ contract SubscriptionTokenV1 is
         sub.secondsGranted += numSeconds;
         _subscriptions[account] = sub;
 
+        // Mint the NFT if it does not exist before grant event for indexers
+        _maybeMint(account, sub.tokenId);
+
         emit Grant(account, sub.tokenId, numSeconds, _subscriptionExpiresAt(sub));
     }
 
@@ -730,9 +743,12 @@ contract SubscriptionTokenV1 is
         uint256 tokens = balance * _tokensPerSecond;
         if (balance > 0) {
             sub.secondsPurchased -= balance;
+            _subscriptions[account] = sub;
             _transferOut(account, tokens);
+        } else {
+            _subscriptions[account] = sub;
         }
-        _subscriptions[account] = sub;
+
         emit Refund(account, sub.tokenId, tokens, balance);
     }
 
