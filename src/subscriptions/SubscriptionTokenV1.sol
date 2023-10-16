@@ -212,6 +212,10 @@ contract SubscriptionTokenV1 is
      * @param params the init params (See Common.InitParams)
      */
     function initialize(Shared.InitParams memory params) public initializer {
+        require(bytes(params.name).length > 0, "Name cannot be empty");
+        require(bytes(params.symbol).length > 0, "Symbol cannot be empty");
+        require(bytes(params.contractUri).length > 0, "Contract URI cannot be empty");
+        require(bytes(params.tokenUri).length > 0, "Token URI cannot be empty");
         require(params.owner != address(0), "Owner address cannot be 0x0");
         require(params.tokensPerSecond > 0, "Tokens per second must be > 0");
         require(params.minimumPurchaseSeconds > 0, "Min purchase seconds must be > 0");
@@ -348,6 +352,7 @@ contract SubscriptionTokenV1 is
      * @param account the account to transfer funds to
      */
     function withdrawTo(address account) public onlyOwner {
+        require(account != address(0), "Account cannot be 0x0");
         uint256 balance = creatorBalance();
         require(balance > 0, "No Balance");
         _transferToCreator(account, balance);
@@ -360,6 +365,7 @@ contract SubscriptionTokenV1 is
      * @param accounts the list of accounts to refund
      */
     function refund(uint256 numTokensIn, address[] memory accounts) external payable onlyOwner {
+        require(accounts.length > 0, "No accounts to refund");
         if (numTokensIn > 0) {
             uint256 finalAmount = _transferIn(msg.sender, numTokensIn);
             emit RefundTopUp(finalAmount);
@@ -378,6 +384,8 @@ contract SubscriptionTokenV1 is
      * @param tokenUri the token metadata URI
      */
     function updateMetadata(string memory contractUri, string memory tokenUri) external onlyOwner {
+        require(bytes(contractUri).length > 0, "Contract URI cannot be empty");
+        require(bytes(tokenUri).length > 0, "Token URI cannot be empty");
         _contractURI = contractUri;
         _tokenURI = tokenUri;
     }
@@ -388,6 +396,8 @@ contract SubscriptionTokenV1 is
      * @param secondsToAdd the number of seconds to grant for each account
      */
     function grantTime(address[] memory accounts, uint256 secondsToAdd) external onlyOwner {
+        require(secondsToAdd > 0, "Seconds to add must be > 0");
+        require(accounts.length > 0, "No accounts to grant time to");
         for (uint256 i = 0; i < accounts.length; i++) {
             _grantTime(accounts[i], secondsToAdd);
         }
@@ -453,6 +463,8 @@ contract SubscriptionTokenV1 is
         whenNotPaused
         validAmount(numTokens)
     {
+        require(referrer != address(0), "Referrer cannot be 0x0");
+
         uint256 finalAmount = _transferIn(msg.sender, numTokens);
         uint256 tokenId = _purchaseTime(account, finalAmount);
 
@@ -528,6 +540,7 @@ contract SubscriptionTokenV1 is
      */
     function createReferralCode(uint256 code, uint16 bps) external onlyOwner {
         require(bps <= _MAX_BIPS, "bps too high");
+        require(bps > 0, "bps must be > 0");
         uint16 existing = _referralCodes[code];
         require(existing == 0, "Referral code exists");
         _referralCodes[code] = bps;
@@ -558,6 +571,8 @@ contract SubscriptionTokenV1 is
 
     /// @dev Add time to a given account (transfer happens before this is called)
     function _purchaseTime(address account, uint256 amount) internal returns (uint256) {
+        require(account != address(0), "Account cannot be 0x0");
+
         Subscription memory sub = _fetchSubscription(account);
 
         // Adjust offset to account for existing time
@@ -950,10 +965,6 @@ contract SubscriptionTokenV1 is
 
         bytes memory str = bytes(_tokenURI);
         uint256 len = str.length;
-        if (len == 0) {
-            return "";
-        }
-
         if (str[len - 1] == "/") {
             return string(abi.encodePacked(_tokenURI, tokenId.toString()));
         }

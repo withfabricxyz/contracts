@@ -71,6 +71,25 @@ contract SubscriptionTokenV1Test is BaseTest {
         stp.initialize(
             Shared.InitParams("Meow Sub", "MEOW", "curi", "turi", creator, 2, 4, 500, 0, 0, address(0), address(0))
         );
+
+        // Invalid name
+        vm.expectRevert("Name cannot be empty");
+        stp.initialize(Shared.InitParams("", "MEOW", "curi", "turi", creator, 2, 4, 0, 0, 0, address(0), address(0)));
+
+        vm.expectRevert("Symbol cannot be empty");
+        stp.initialize(
+            Shared.InitParams("Meow Sub", "", "curi", "turi", creator, 2, 4, 0, 0, 0, address(0), address(0))
+        );
+
+        vm.expectRevert("Contract URI cannot be empty");
+        stp.initialize(
+            Shared.InitParams("Meow Sub", "MEOW", "", "turi", creator, 2, 4, 0, 0, 0, address(0), address(0))
+        );
+
+        vm.expectRevert("Token URI cannot be empty");
+        stp.initialize(
+            Shared.InitParams("Meow Sub", "MEOW", "curi", "", creator, 2, 4, 0, 0, 0, address(0), address(0))
+        );
     }
 
     function testMint() public prank(alice) {
@@ -101,6 +120,9 @@ contract SubscriptionTokenV1Test is BaseTest {
     }
 
     function testMintFor() public prank(alice) {
+        vm.expectRevert("Account cannot be 0x0");
+        stp.mintFor{value: 1e18}(address(0), 1e18);
+
         vm.expectEmit(true, true, false, true, address(stp));
         emit Purchase(bob, 1, 1e18, 1e18 / 2, 0, block.timestamp + (1e18 / 2));
         stp.mintFor{value: 1e18}(bob, 1e18);
@@ -187,6 +209,11 @@ contract SubscriptionTokenV1Test is BaseTest {
         (creator, 2e18);
         stp.refund(0, list(alice));
         assertEq(address(stp).balance, 0);
+
+        address[] memory subscribers = new address[](0);
+        vm.expectRevert("No accounts to refund");
+        stp.refund(0, subscribers);
+
         vm.stopPrank();
         vm.expectRevert("Ownable: caller is not the owner");
         stp.refund(0, list(alice));
@@ -251,6 +278,9 @@ contract SubscriptionTokenV1Test is BaseTest {
         mint(alice, 1e18);
         address invalid = address(this);
         vm.startPrank(creator);
+        vm.expectRevert("Account cannot be 0x0");
+        stp.withdrawTo(address(0));
+
         vm.expectRevert("Failed to transfer Ether");
         stp.withdrawTo(invalid);
         stp.withdrawTo(alice);
@@ -382,8 +412,14 @@ contract SubscriptionTokenV1Test is BaseTest {
         assertEq(stp.contractURI(), "x");
         assertEq(stp.tokenURI(1), "y/1");
 
-        stp.updateMetadata("x", "");
-        assertEq(stp.tokenURI(1), "");
+        stp.updateMetadata("x", "z");
+        assertEq(stp.tokenURI(1), "z");
+
+        vm.expectRevert("Contract URI cannot be empty");
+        stp.updateMetadata("", "z");
+
+        vm.expectRevert("Token URI cannot be empty");
+        stp.updateMetadata("be", "");
         vm.stopPrank();
 
         vm.expectRevert("Ownable: caller is not the owner");

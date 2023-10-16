@@ -22,6 +22,9 @@ contract SubscriptionTokenV1ReferralTest is BaseTest {
         stp.createReferralCode(1, 500);
         uint16 bps = stp.referralCodeBps(1);
         assertEq(bps, 500);
+
+        vm.expectRevert("bps must be > 0");
+        stp.createReferralCode(2, 0);
     }
 
     function testCreateInvalid() public prank(creator) {
@@ -56,6 +59,10 @@ contract SubscriptionTokenV1ReferralTest is BaseTest {
 
         uint256 balance = charlie.balance;
         vm.startPrank(alice);
+
+        vm.expectRevert("Referrer cannot be 0x0");
+        stp.mintWithReferral{value: 1e17}(1e17, 1, address(0));
+
         vm.expectEmit(true, true, false, true, address(stp));
         emit ReferralPayout(1, charlie, 1, 5e15);
         stp.mintWithReferral{value: 1e17}(1e17, 1, charlie);
