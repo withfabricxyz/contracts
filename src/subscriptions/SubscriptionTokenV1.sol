@@ -364,10 +364,10 @@ contract SubscriptionTokenV1 is
     }
 
     /**
-     * @notice Refund one or more accounts remaining purchased time
+     * @notice Refund one or more accounts remaining purchased time and revoke any granted time
      * @dev This refunds accounts using creator balance, and can also transfer in to top up the fund. Any excess value is withdrawable, but subject to fees.
      * @param numTokensIn an optional amount of tokens to transfer in before refunding
-     * @param accounts the list of accounts to refund
+     * @param accounts the list of accounts to refund and revoke grants for
      */
     function refund(uint256 numTokensIn, address[] memory accounts) external payable onlyOwner {
         require(accounts.length > 0, "No accounts to refund");
