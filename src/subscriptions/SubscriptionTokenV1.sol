@@ -1055,4 +1055,28 @@ contract SubscriptionTokenV1 is
         require(tokenAddress != erc20Address(), "Cannot recover subscription token");
         IERC20(tokenAddress).safeTransfer(recipientAddress, tokenAmount);
     }
+
+    /**
+     * @notice Recover native tokens which bypassed receive. Only callable for erc20 denominated contracts.
+     * @param recipient the address to send the tokens to
+     */
+    function recoverNativeTokens(address recipient) external onlyOwner {
+        require(_erc20, "Not supported, use reconcileNativeTokens");
+        uint256 balance = address(this).balance;
+        require(balance > 0, "No balance to recover");
+        (bool sent,) = payable(recipient).call{value: balance}("");
+        require(sent, "Failed to transfer Ether");
+    }
+
+    /**
+     * @notice Reconcile native tokens which bypassed receive/mint. Only callable for native denominated contracts.
+     */
+    function reconcileNativeBalance() external onlyOwner {
+        require(!_erc20, "Not supported, use recoverNativeTokens");
+        uint256 balance = address(this).balance;
+        require(balance > 0, "No balance to recover");
+        uint256 expectedBalance = _tokensIn - _tokensOut;
+        require(balance > expectedBalance, "Balance reconciled");
+        _tokensIn += balance - expectedBalance;
+    }
 }

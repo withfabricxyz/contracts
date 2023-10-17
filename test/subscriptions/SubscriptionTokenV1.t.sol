@@ -8,6 +8,7 @@ import "src/subscriptions/Shared.sol";
 import "src/tokens/ERC20Token.sol";
 import "./BaseTest.t.sol";
 import "../finance/CrowdFinancingV1/mocks/MockFeeToken.sol";
+import "../mocks/SelfDestruct.sol";
 
 contract SubscriptionTokenV1Test is BaseTest {
     function setUp() public {
@@ -488,6 +489,49 @@ contract SubscriptionTokenV1Test is BaseTest {
         token.transfer(address(stp), 1e17);
         stp.recoverERC20(address(token), alice, 1e17);
         assertEq(token.balanceOf(alice), 1e17);
+    }
+
+    function testReconcileNative() public prank(creator) {
+        SelfDestruct attack = new SelfDestruct();
+
+        vm.expectRevert("No balance to recover");
+        stp.reconcileNativeBalance();
+
+        deal(address(attack), 1e18);
+        attack.destroy(address(stp));
+
+        assertEq(address(stp).balance, 1e18);
+        assertEq(stp.creatorBalance(), 0);
+        stp.reconcileNativeBalance();
+        assertEq(stp.creatorBalance(), 1e18);
+
+        vm.expectRevert("Balance reconciled");
+        stp.reconcileNativeBalance();
+
+        vm.expectRevert("Not supported, use reconcileNativeTokens");
+        stp.recoverNativeTokens(bob);
+    }
+
+    function testRecoverNative() public erc20 prank(creator) {
+        SelfDestruct attack = new SelfDestruct();
+
+        vm.expectRevert("No balance to recover");
+        stp.recoverNativeTokens(bob);
+
+        deal(address(attack), 1e18);
+        attack.destroy(address(stp));
+
+        assertEq(address(stp).balance, 1e18);
+
+        vm.expectRevert("Failed to transfer Ether");
+        stp.recoverNativeTokens(address(this));
+
+        stp.recoverNativeTokens(bob);
+        assertEq(stp.creatorBalance(), 0);
+        assertEq(bob.balance, 1e19 + 1e18);
+
+        vm.expectRevert("Not supported, use recoverNativeTokens");
+        stp.reconcileNativeBalance();
     }
 
     /// Supply Cap
