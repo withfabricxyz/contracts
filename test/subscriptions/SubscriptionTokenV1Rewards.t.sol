@@ -236,6 +236,32 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         vm.stopPrank();
     }
 
+    function testNoPointAllocation() public {
+        vm.warp(365 days);
+        // first mint is after reward points go to 0
+        mint(alice, 1e18);
+        withdraw();
+        assertEq(0, stp.rewardPoolBalance());
+    }
+
+    function testRewardPoolToCreator() public {
+        mint(alice, 1e18);
+        withdraw();
+        assertEq(5e16, stp.rewardPoolBalance());
+        assertEq(5e16, stp.rewardBalanceOf(alice));
+
+        (,,, uint256 expires) = stp.subscriptionOf(alice);
+        vm.warp(expires * 5);
+        mint(bob, 1e18);
+        vm.startPrank(bob);
+        stp.slashRewards(alice);
+        vm.stopPrank();
+
+        assertEq(0, stp.rewardPoolBalance());
+        // total points -> 0, so remaining rewards go back to creator
+        assertEq(1e18 + 5e16, stp.creatorBalance());
+    }
+
     function testSlashPostWithdraw() public {
         mint(alice, 3e8);
         mint(bob, 2e8);

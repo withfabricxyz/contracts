@@ -325,6 +325,11 @@ contract SubscriptionTokenV1 is
         _totalRewardPoints -= slashed;
         _subscriptions[account] = sub;
 
+        // If all points are slashed, move left-over funds to creator
+        if (_totalRewardPoints == 0) {
+            _rewardPoolBalance = 0;
+        }
+
         emit RewardPointsSlashed(account, msg.sender, slashed);
     }
 
@@ -625,7 +630,7 @@ contract SubscriptionTokenV1 is
 
     /// @dev Allocate tokens to the reward pool
     function _allocateRewards(uint256 amount) internal returns (uint256) {
-        if (_rewardBps == 0) {
+        if (_rewardBps == 0 || _totalRewardPoints == 0) {
             return amount;
         }
         uint256 rewards = (amount * _rewardBps) / _MAX_BIPS;
