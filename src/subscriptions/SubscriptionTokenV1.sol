@@ -365,7 +365,7 @@ contract SubscriptionTokenV1 is
 
     /**
      * @notice Refund one or more accounts remaining purchased time and revoke any granted time
-     * @dev This refunds accounts using creator balance, and can also transfer in to top up the fund. Any excess value is withdrawable, but subject to fees.
+     * @dev This refunds accounts using creator balance, and can also transfer in to top up the fund. Any excess value is withdrawable.
      * @param numTokensIn an optional amount of tokens to transfer in before refunding
      * @param accounts the list of accounts to refund and revoke grants for
      */
@@ -592,6 +592,9 @@ contract SubscriptionTokenV1 is
         _subscriptions[account] = sub;
         _totalRewardPoints += rp;
 
+        // If fees or rewards are enabled, allocate a portion of the purchase to those pools
+        _allocateFeesAndRewards(amount);
+
         // Mint the NFT if it does not exist before purchase event for indexers
         _maybeMint(account, sub.tokenId);
 
@@ -615,6 +618,11 @@ contract SubscriptionTokenV1 is
         if (_ownerOf(tokenId) == address(0)) {
             _safeMint(account, tokenId);
         }
+    }
+
+    /// @dev If fees or rewards are present, allocate a portion of the amount to the relevant pools
+    function _allocateFeesAndRewards(uint256 amount) private {
+        _allocateRewards(_allocateFees(amount));
     }
 
     /// @dev Allocate tokens to the fee collector
@@ -662,10 +670,8 @@ contract SubscriptionTokenV1 is
 
     /// @dev Transfer tokens to the creator, after allocating protocol fees and rewards
     function _transferToCreator(address to, uint256 amount) internal {
-        uint256 finalAmount = _allocateFees(amount);
-        finalAmount = _allocateRewards(finalAmount);
-        emit Withdraw(to, finalAmount);
-        _transferOut(to, finalAmount);
+        emit Withdraw(to, amount);
+        _transferOut(to, amount);
     }
 
     /// @dev Transfer tokens out of the contract, either native or ERC20

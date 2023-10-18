@@ -41,12 +41,20 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         assertEq(stp.rewardMultiplier(), 0);
     }
 
-    function testRewardPointAllocation() public {
-        mint(alice, 1e18);
+    function testRewardPointAllocation() public prank(alice) {
+        vm.expectEmit(true, true, false, true, address(stp));
+        emit RewardsAllocated(1e18 * 500 / 10_000);
+        stp.mint{value: 1e18}(1e18);
         (,, uint256 points,) = stp.subscriptionOf(alice);
         assertEq(stp.rewardMultiplier(), 64);
         assertEq(points, 1e18 * 64);
         assertEq(stp.totalRewardPoints(), 1e18 * 64);
+
+        // 2nd allocation
+        stp.mint{value: 1e18}(1e18);
+        (,, points,) = stp.subscriptionOf(alice);
+        assertEq(points, 2e18 * 64);
+        assertEq(stp.totalRewardPoints(), 2e18 * 64);
     }
 
     function testDisabledWithdraw() public {
@@ -112,8 +120,6 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         assertEq(0, stp.rewardBalanceOf(alice));
 
         mint(doug, 1e18);
-        vm.expectEmit(true, true, false, true, address(stp));
-        emit RewardsAllocated(1e18 * 500 / 10_000);
         withdraw();
 
         uint256 withdrawn = (totalPool * 64) / (64 + 32 + 16 + 8);
@@ -267,26 +273,24 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         mint(bob, 2e8);
         mint(charlie, 1e8);
 
-        withdraw();
-        uint256 bobBalance = stp.rewardBalanceOf(bob);
-        assertEq(bobBalance, 10000000);
+        uint256 aliceBalance = stp.rewardBalanceOf(alice);
+        assertEq(aliceBalance, 15000000);
 
         // withdraw rewards for alice
-        vm.startPrank(alice);
+        vm.startPrank(charlie);
         stp.withdrawRewards();
         vm.stopPrank();
 
         // Go past expiration
-        (,,, uint256 expires) = stp.subscriptionOf(alice);
+        (,,, uint256 expires) = stp.subscriptionOf(charlie);
         vm.warp(expires + expires + 1);
 
-        // activate and slash alice
-        mint(bob, 1e7);
-        vm.startPrank(bob);
-        stp.slashRewards(alice);
+        // slash charlie
+        vm.startPrank(alice);
+        stp.slashRewards(charlie);
         vm.stopPrank();
 
-        assertEq(stp.rewardBalanceOf(bob), bobBalance);
+        assertEq(stp.rewardBalanceOf(alice), aliceBalance);
     }
 
     function testSlashPostWithdrawDistanceFuture() public {
@@ -294,26 +298,27 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         mint(bob, 2e8);
         mint(charlie, 1e8);
 
-        withdraw();
-        uint256 bobBalance = stp.rewardBalanceOf(bob);
-        assertEq(bobBalance, 10000000);
+        uint256 aliceBalance = stp.rewardBalanceOf(alice);
+        assertEq(aliceBalance, 15000000);
 
-        // withdraw rewards for alice
-        vm.startPrank(alice);
+        // withdraw rewards for charlie
+        vm.startPrank(charlie);
         stp.withdrawRewards();
         vm.stopPrank();
 
         // Go far past expiration
-        (,,, uint256 expires) = stp.subscriptionOf(alice);
-        vm.warp(expires * 5);
+        (,,, uint256 expires) = stp.subscriptionOf(charlie);
+        vm.warp(expires + expires + 1e6);
 
-        // activate and slash alice
-        mint(bob, 1e7);
-        vm.startPrank(bob);
-        stp.slashRewards(alice);
+        // slash charlie
+        vm.startPrank(alice);
+        stp.slashRewards(charlie);
         vm.stopPrank();
 
-        assertEq(stp.rewardBalanceOf(bob), bobBalance);
+        assertEq(stp.rewardBalanceOf(alice), aliceBalance);
+
+        (,, uint256 charliePoints,) = stp.subscriptionOf(charlie);
+        assertEq(charliePoints, 0);
     }
 
     function testHalfSlashPostWithdraw() public {
@@ -321,35 +326,32 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         mint(bob, 2e8);
         mint(charlie, 1e8);
 
-        withdraw();
-        uint256 bobBalance = stp.rewardBalanceOf(bob);
-        assertEq(bobBalance, 10000000);
+        uint256 aliceBalance = stp.rewardBalanceOf(alice);
+        assertEq(aliceBalance, 15000000);
 
-        // withdraw rewards for alice
-        vm.startPrank(alice);
+        // withdraw rewards for charlie
+        vm.startPrank(charlie);
         stp.withdrawRewards();
         vm.stopPrank();
 
         // slash half of rewards
-        (,,, uint256 expires) = stp.subscriptionOf(alice);
+        (,,, uint256 expires) = stp.subscriptionOf(charlie);
         vm.warp(expires + ((expires - block.timestamp) / 2));
 
-        // slash alice
-        mint(bob, 1e7);
-        vm.startPrank(bob);
-        stp.slashRewards(alice);
+        // slash charlie
+        vm.startPrank(alice);
+        stp.slashRewards(charlie);
         vm.stopPrank();
 
-        assertEq(stp.rewardBalanceOf(bob), bobBalance);
+        assertEq(stp.rewardBalanceOf(alice), aliceBalance);
 
         // slash the rest
         vm.warp(expires + expires + 1);
 
-        mint(bob, 1e7);
-        vm.startPrank(bob);
-        stp.slashRewards(alice);
+        vm.startPrank(alice);
+        stp.slashRewards(charlie);
         vm.stopPrank();
 
-        assertEq(stp.rewardBalanceOf(bob), bobBalance);
+        assertEq(stp.rewardBalanceOf(alice), aliceBalance);
     }
 }
