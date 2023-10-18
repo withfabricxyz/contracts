@@ -21,13 +21,16 @@ contract SubscriptionTokenV1FeeTest is BaseTest {
 
         assertEq(bps, 500);
         assertEq(recipient, fees);
-        mint(alice, 1e18);
 
         uint256 expectedFee = (1e18 * 500) / 10000;
         uint256 balance = creator.balance;
 
+        vm.startPrank(alice);
         vm.expectEmit(true, true, false, true, address(stp));
         emit FeeAllocated(expectedFee);
+        stp.mint{value: 1e18}(1e18);
+        vm.stopPrank();
+
         withdraw();
 
         assertEq(creator.balance, balance + (1e18 - expectedFee));
