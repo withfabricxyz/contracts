@@ -1072,7 +1072,7 @@ contract SubscriptionTokenV1 is
      * @param recipient the address to send the tokens to
      */
     function recoverNativeTokens(address recipient) external onlyOwner {
-        require(_erc20, "Not supported, use reconcileNativeTokens");
+        require(_erc20, "Not supported, use reconcileNativeBalance");
         uint256 balance = address(this).balance;
         require(balance > 0, "No balance to recover");
         (bool sent,) = payable(recipient).call{value: balance}("");
