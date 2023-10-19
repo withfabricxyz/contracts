@@ -509,7 +509,7 @@ contract SubscriptionTokenV1Test is BaseTest {
         vm.expectRevert("Balance reconciled");
         stp.reconcileNativeBalance();
 
-        vm.expectRevert("Not supported, use reconcileNativeTokens");
+        vm.expectRevert("Not supported, use reconcileNativeBalance");
         stp.recoverNativeTokens(bob);
     }
 
