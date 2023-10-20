@@ -119,8 +119,6 @@ contract SubscriptionTokenV1 is
         uint256 rewardPoints;
         /// @dev The number of rewards withdrawn
         uint256 rewardsWithdrawn;
-        /// @dev The last time rewards were slashed
-        uint256 lastSlashAt;
     }
 
     /// @dev The metadata URI for the contract
@@ -285,7 +283,7 @@ contract SubscriptionTokenV1 is
     }
 
     /**
-     * @notice Slash the reward points for an expired subscription in proportion to the percentage of lapsed time.
+     * @notice Slash the reward points for an expired subscription after a grace period which is 50% of the purchased time
      *         Any slashable points are burned, increasing the value of remaining points.
      * @param account the account of the subscription to slash
      */
@@ -295,42 +293,24 @@ contract SubscriptionTokenV1 is
         require(_isActive(slasher), "Subscription not active");
 
         Subscription memory sub = _subscriptions[account];
-        uint256 slashTime = sub.purchaseOffset + sub.secondsPurchased;
-        if (sub.lastSlashAt > slashTime) {
-            slashTime = sub.lastSlashAt;
-        }
-        require(slashTime < block.timestamp, "Not slashable");
         require(sub.rewardPoints > 0, "No reward points to slash");
 
-        // Calculate the number of reward points to slash
-        uint256 bps = ((block.timestamp - slashTime) * _MAX_BIPS) / sub.secondsPurchased;
-        uint256 slashed = (sub.rewardPoints * bps) / _MAX_BIPS;
-        if (slashed > sub.rewardPoints) {
-            slashed = sub.rewardPoints;
-        }
+        // Expiration + grace period (50% of purchased time)
+        uint256 slashPoint = _subscriptionExpiresAt(sub) + (sub.secondsPurchased / 2);
+        require(block.timestamp >= slashPoint, "Not slashable");
 
-        // Account for the value of reward withdraws to ensure reward balances of other accounts
-        // do not increase disproportionately upon slash
-        uint256 slashedValue = (sub.rewardsWithdrawn * bps) / _MAX_BIPS;
-        if (slashedValue > 0) {
-            if (slashedValue > sub.rewardsWithdrawn) {
-                slashedValue = sub.rewardsWithdrawn;
-            }
-            _rewardPoolSlashed += slashedValue;
-            sub.rewardsWithdrawn -= slashedValue;
-        }
-
-        sub.lastSlashAt = block.timestamp;
-        sub.rewardPoints -= slashed;
-        _totalRewardPoints -= slashed;
-        _subscriptions[account] = sub;
+        // Deflate the reward points pool and account for prior reward withdrawals
+        _totalRewardPoints -= sub.rewardPoints;
+        _rewardPoolSlashed += sub.rewardsWithdrawn;
 
         // If all points are slashed, move left-over funds to creator
         if (_totalRewardPoints == 0) {
             _rewardPoolBalance = 0;
         }
 
-        emit RewardPointsSlashed(account, msg.sender, slashed);
+        emit RewardPointsSlashed(account, msg.sender, sub.rewardPoints);
+        sub.rewardPoints = 0;
+        _subscriptions[account] = sub;
     }
 
     /////////////////////////
@@ -608,7 +588,7 @@ contract SubscriptionTokenV1 is
         if (sub.tokenId == 0) {
             require(_supplyCap == 0 || _tokenCounter < _supplyCap, "Supply cap reached");
             _tokenCounter += 1;
-            sub = Subscription(_tokenCounter, 0, 0, block.timestamp, block.timestamp, 0, 0, 0);
+            sub = Subscription(_tokenCounter, 0, 0, block.timestamp, block.timestamp, 0, 0);
         }
         return sub;
     }
@@ -773,8 +753,10 @@ contract SubscriptionTokenV1 is
     }
 
     /// @dev The timestamp when the subscription expires
-    function _subscriptionExpiresAt(Subscription memory sub) internal view returns (uint256) {
-        return block.timestamp + _purchaseTimeRemaining(sub) + _grantTimeRemaining(sub);
+    function _subscriptionExpiresAt(Subscription memory sub) internal pure returns (uint256) {
+        uint256 purchase = sub.purchaseOffset + sub.secondsPurchased;
+        uint256 grant = sub.grantOffset + sub.secondsGranted;
+        return purchase > grant ? purchase : grant;
     }
 
     /// @dev The reward balance for a given subscription
@@ -871,13 +853,7 @@ contract SubscriptionTokenV1 is
         returns (uint256 tokenId, uint256 refundableAmount, uint256 rewardPoints, uint256 expiresAt)
     {
         Subscription memory sub = _subscriptions[account];
-
-        uint256 expires = _subscriptionExpiresAt(sub);
-        if (expires <= block.timestamp) {
-            expires = 0;
-        }
-
-        return (sub.tokenId, sub.secondsPurchased, sub.rewardPoints, expires);
+        return (sub.tokenId, sub.secondsPurchased, sub.rewardPoints, _subscriptionExpiresAt(sub));
     }
 
     /**
