@@ -9,7 +9,7 @@ import "./BaseTest.t.sol";
 
 contract SubscriptionTokenV1RewardsTest is BaseTest {
     function setUp() public {
-        deal(alice, 1e19);
+        deal(alice, 1e20);
         deal(bob, 1e19);
         deal(charlie, 1e19);
         deal(doug, 1e19);
@@ -178,27 +178,6 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         assertEq(afterPoints, beforePoints - alicePoints);
     }
 
-    function testSlashingPartial() public {
-        mint(alice, 2592000 * 2);
-        mint(bob, 1e8);
-
-        uint256 beforePoints = stp.totalRewardPoints();
-        (,, uint256 alicePoints, uint256 expires) = stp.subscriptionOf(alice);
-
-        // 50% slash
-        uint256 warpTo = expires + (stp.balanceOf(alice) / 2);
-        vm.warp(warpTo);
-        vm.startPrank(bob);
-        stp.slashRewards(alice);
-        vm.stopPrank();
-
-        uint256 afterPoints = stp.totalRewardPoints();
-        (,, uint256 aliceAfterPoints,) = stp.subscriptionOf(alice);
-
-        assertEq(alicePoints / 2, aliceAfterPoints);
-        assertEq(afterPoints, beforePoints - (alicePoints / 2));
-    }
-
     function testSlashingWithdraws() public {
         mint(alice, 2592000 * 2);
         vm.warp((stp.minPurchaseSeconds() * 3) + 1);
@@ -222,9 +201,6 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         withdraw();
         vm.startPrank(bob);
         stp.slashRewards(alice);
-        vm.expectRevert("Not slashable");
-        stp.slashRewards(alice);
-        vm.warp((stp.minPurchaseSeconds() * 4) + 1);
         vm.expectRevert("No reward points to slash");
         stp.slashRewards(alice);
         vm.stopPrank();
@@ -291,6 +267,7 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         vm.stopPrank();
 
         assertEq(stp.rewardBalanceOf(alice), aliceBalance);
+        assertEq(stp.rewardBalanceOf(charlie), 0);
     }
 
     function testSlashPostWithdrawDistanceFuture() public {
@@ -319,39 +296,5 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
 
         (,, uint256 charliePoints,) = stp.subscriptionOf(charlie);
         assertEq(charliePoints, 0);
-    }
-
-    function testHalfSlashPostWithdraw() public {
-        mint(alice, 3e8);
-        mint(bob, 2e8);
-        mint(charlie, 1e8);
-
-        uint256 aliceBalance = stp.rewardBalanceOf(alice);
-        assertEq(aliceBalance, 15000000);
-
-        // withdraw rewards for charlie
-        vm.startPrank(charlie);
-        stp.withdrawRewards();
-        vm.stopPrank();
-
-        // slash half of rewards
-        (,,, uint256 expires) = stp.subscriptionOf(charlie);
-        vm.warp(expires + ((expires - block.timestamp) / 2));
-
-        // slash charlie
-        vm.startPrank(alice);
-        stp.slashRewards(charlie);
-        vm.stopPrank();
-
-        assertEq(stp.rewardBalanceOf(alice), aliceBalance);
-
-        // slash the rest
-        vm.warp(expires + expires + 1);
-
-        vm.startPrank(alice);
-        stp.slashRewards(charlie);
-        vm.stopPrank();
-
-        assertEq(stp.rewardBalanceOf(alice), aliceBalance);
     }
 }

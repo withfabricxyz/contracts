@@ -99,8 +99,11 @@ contract SubscriptionTokenV1Test is BaseTest {
         stp.mint{value: 1e18}(1e18);
         assertEq(address(stp).balance, 1e18);
         assertEq(stp.balanceOf(alice), 5e17);
-        (uint256 tokenId,,,) = stp.subscriptionOf(alice);
+        (uint256 tokenId, uint256 numSeconds, uint256 points, uint256 expires) = stp.subscriptionOf(alice);
         assertEq(stp.ownerOf(tokenId), alice);
+        assertEq(numSeconds, 1e18 / 2);
+        assertEq(points, 0);
+        assertEq(expires, block.timestamp + (1e18 / 2));
         assertEq(stp.tokenURI(1), "turi");
     }
 
@@ -159,10 +162,12 @@ contract SubscriptionTokenV1Test is BaseTest {
     }
 
     function testMintExpire() public prank(alice) {
+        uint256 time = block.timestamp;
         stp.mint{value: 1e18}(1e18);
         vm.warp(block.timestamp + 6e17);
         assertEq(stp.balanceOf(alice), 0);
-        (uint256 tokenId,,,) = stp.subscriptionOf(alice);
+        (uint256 tokenId,,, uint256 expires) = stp.subscriptionOf(alice);
+        assertEq(expires, time + 1e18 / 2);
         assertEq(stp.ownerOf(tokenId), alice);
     }
 
