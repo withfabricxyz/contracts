@@ -297,4 +297,29 @@ contract SubscriptionTokenV1RewardsTest is BaseTest {
         (,, uint256 charliePoints,) = stp.subscriptionOf(charlie);
         assertEq(charliePoints, 0);
     }
+
+    function testSlashResub() public {
+        mint(alice, 1e7);
+        mint(bob, 3e8);
+        uint256 aliceBalance = stp.rewardBalanceOf(alice);
+        assertEq(aliceBalance, 500000);
+
+        // withdraw rewards for charlie
+        vm.startPrank(alice);
+        stp.withdrawRewards();
+        vm.stopPrank();
+
+        // Go far past expiration
+        (,,, uint256 expires) = stp.subscriptionOf(alice);
+        vm.warp((expires * 150) / 90);
+
+        // slash charlie
+        mint(bob, 3e8);
+        vm.startPrank(bob);
+        stp.slashRewards(alice);
+        vm.stopPrank();
+
+        mint(alice, 3e8);
+        assertEq(stp.rewardBalanceOf(alice), 4500000);
+    }
 }
