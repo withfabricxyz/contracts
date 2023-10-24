@@ -310,6 +310,7 @@ contract SubscriptionTokenV1 is
 
         emit RewardPointsSlashed(account, msg.sender, sub.rewardPoints);
         sub.rewardPoints = 0;
+        sub.rewardsWithdrawn = 0;
         _subscriptions[account] = sub;
     }
 
