@@ -3,7 +3,7 @@
 pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts/proxy/Clones.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "./SubscriptionTokenV1.sol";
 import "./Shared.sol";
 
@@ -15,9 +15,12 @@ import "./Shared.sol";
  * @dev A factory which leverages Clones to deploy Fabric Subscription Token Contracts
  *
  */
-contract SubscriptionTokenV1Factory is Ownable {
+contract SubscriptionTokenV1Factory is Ownable2Step {
     /// @dev The maximum fee that can be charged for a subscription contract
     uint16 private constant _MAX_FEE_BIPS = 1250;
+
+    /// @dev The number of reward halvings
+    uint8 private constant _DEFAULT_REWARD_HALVINGS = 6;
 
     /// @dev Guard to ensure the deploy fee is met
     modifier feeRequired() {
@@ -58,7 +61,7 @@ contract SubscriptionTokenV1Factory is Ownable {
     /**
      * @param implementation the SubscriptionTokenV1 implementation address
      */
-    constructor(address implementation) Ownable() {
+    constructor(address implementation) Ownable2Step() {
         _implementation = implementation;
         _feeDeployMin = 0;
     }
@@ -104,7 +107,7 @@ contract SubscriptionTokenV1Factory is Ownable {
                 tokensPerSecond,
                 minimumPurchaseSeconds,
                 rewardBps,
-                6, // Fixed halvings
+                _DEFAULT_REWARD_HALVINGS,
                 fees.basisPoints,
                 fees.collector,
                 erc20TokenAddr

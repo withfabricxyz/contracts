@@ -163,4 +163,12 @@ contract SubscriptionTokenV1FactoryTest is BaseTest {
         vm.expectRevert("Failed to transfer Ether");
         factory.transferDeployFees(address(this));
     }
+
+    function testTransferAccept() public {
+        factory.transferOwnership(alice);
+        vm.startPrank(alice);
+        factory.acceptOwnership();
+        vm.stopPrank();
+        assertEq(factory.owner(), alice);
+    }
 }
